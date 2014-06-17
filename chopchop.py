@@ -1,10 +1,10 @@
 #!/usr/bin/python
-
 #####################
 ##
-## BLAH BLAH OUT PROGRAM IS AWESOME AND DOES THIS AND THIS
+## Copyright 2014 (C) 
 ##
-## ALL YOUR COPY BELONG TO US!!!
+## Eivind Valen, Tessa Montague and Jose Cruz
+##
 
 #####################
 ##
