@@ -43,8 +43,8 @@ from subprocess import Popen, PIPE
 
 
 # PATHs
-primer3="bin/primer3_core"
-twoBitToFa="bin/twoBitToFa"
+primer3="primer3_core"
+twoBitToFa="twoBitToFa"
 twoBitIndexDir="genomes"
 bowtie = "bowtie"
 bowtieIndexDir = "genomes"
@@ -544,15 +544,16 @@ def truncateToCoding(cdsStart, cdsEnd, exons, indices):
 
     
 def _geneLineToCoord(line, guideSize):
+
     startSplit = line[1].split(",")
     endSplit = line[2].split(",")
     
     # Remove last (empty) item in list (due to extra comma)
-    del startSplit[-1]
-    del endSplit[-1]            
+    del startSplit[-1]  
+    del endSplit[-1]           
     
     startBase = map(int, startSplit)
-    endBase = map(int, endSplit)            
+    endBase = map(int, endSplit)
 
     intronSize = [int(startBase[x+1]) - int(endBase[x]) for x in range(len(startBase)-1)]
     intronSize.append(0)
@@ -614,6 +615,27 @@ def geneToCoord_file(geneIN, tableFile, guideSize, index):
     # Look in genome table for gene of question
     for row in tablereader:
         if (row['name'] == geneIN):
+            found = True
+            return (_geneLineToCoord([row['chrom'], row['exonStarts'], row['exonEnds']], guideSize), row['cdsStart'], row['cdsEnd'], row['strand'])
+
+    tableR.close()        
+
+    # Error if gene doesn't exist.
+    if not found:
+        sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (geneIN, tableFile))
+        sys.exit(EXIT['GENE_ERROR'])
+
+
+def geneToCoord_UCSCfile(geneIN, tableFile, guideSize, index):    
+    """ Extracts coordinates of genomic regions from BED file to parse for suitable guide binding sites """
+
+    tableR = open(tableFile, 'rb')
+    tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
+    found = False
+
+    # Look in genome table for gene of question
+    for row in tablereader:
+        if (row['#geneName'] or row['name'] == geneIN):
             found = True
             return (_geneLineToCoord([row['chrom'], row['exonStarts'], row['exonEnds']], guideSize), row['cdsStart'], row['cdsEnd'], row['strand'])
 
@@ -810,7 +832,7 @@ def get_primer_query_sequence_2bit(target, outputDir, flank, genome, twoBitToFaI
         seqLenBeforeTarget -= abs(s)
         s = 0
 
-    prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err" % (twoBitToFa, target.chrom, s, target.end+flank, twoBitToFaIndexDir, genome, outputDir), stdout = PIPE, shell=True)
+    prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err" % (twoBitToFa, target.chrom, s, target.end+flank, twoBitToFaIndexDir, genome, outputDir), stdout = PIPE, shell=True)  
     output = prog.communicate()  
     
     if (prog.returncode != 0):
@@ -1393,17 +1415,18 @@ def coordsToJson(coords, cdsStart, cdsEnd, strand):
     return newCoords
 
 
-def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exonSubset):
+def parseTargets(targetString, genome, use_db, use_UCSC, data, padSize, targetRegion, exonSubset):
     targets = []
     displayIndices = []
     visCoords = []
     targetSize = 0
     target_strand = None
-
+    
+    # check if input is in the pattern of coordinates
     pattern = re.compile("((\w+):)?([\.\,\d]+)\-([\.\,\d]+)")
     isCoordinate = pattern.match(targetString)
 
-    if isCoordinate: 
+    if isCoordinate:
 
         # Target specified as coordinate
         if target_strand == None:
@@ -1455,16 +1478,19 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
         if m:
             targetString = m.group(1)
             index = int(m.group(2))
-
+        
+        
         # GENE / TRANSCRIPT
         if use_db:
             (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_db(targetString, genome, data, padSize, index)
+        elif use_UCSC:
+            (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_UCSCfile(targetString, data, padSize, index)
         else:
             (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_file(targetString, data, padSize, index)
 
         if target_strand == None:
             target_strand = strand
-        elif taret_strand != strand:
+        elif target_strand != strand:   
             sys.stderr.write("All targets must be on the same strand.\n")
             sys.exit(EXIT['GENE_ERROR'])
 
@@ -1633,7 +1659,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("targets", help="Target genes or regions", metavar="TARGET_REGIONS")
     parser.add_argument("-r", "--gRVD", default="NH ", dest="g_RVD", action="store_const", const="NN ",  help="Use RVD 'NN' instead of 'NH' for guanine nucleotides. 'NH' appears to be more specific than 'NN' but the choice depends on assembly kit.")
-    parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")   
+    parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")
+    parser.add_argument("-U", "--UCSCTable", default=False, action="store_true", help="User provides a gene table for their organism downloaded from UCSC genome browser site", dest="UCSCTable") 
     parser.add_argument("-e", "--exon", help="Comma separated list of exon indices. Only find sites in this subset. ", metavar="EXON_NUMBER", dest="exons")   
     parser.add_argument("-G", "--genome", default="danRer7", metavar="GENOME", help="The genome to search.") 
     parser.add_argument("-g", "--guideSize", default=None, type=int, metavar="GUIDE_SIZE", help="The size of the guide RNA.")
@@ -1655,7 +1682,7 @@ def main():
     parser.add_argument("-3", "--primer3options", default=None, help="Options for Primer3. E.g. 'KEY1=VALUE1;KEY2=VALUE2'")
     parser.add_argument("-A", "--primerFlanks", default=300, type=int, help="Size of flanking regions to search for primers.")
     parser.add_argument("-a", "--guidePadding", default=20, type=int, help="Minimum distance of primer to target site.")
-    parser.add_argument("-O", "--limitPrintResults", default=1000, dest="limitPrintResults", help="The number of results to print extended information for. Default 1000.")
+    parser.add_argument("-O", "--limitPrintResults", default=250, dest="limitPrintResults", help="The number of results to print extended information for. Default 250.")  
     parser.add_argument("-u", "--uniqueMethod_Hsu", default=False, dest="uniqueMethod_Hsu", action="store_true", help="A method to determine how unique the site is in the genome: allows 2 mismatches in first 18 bp (because minimum region can keep constant in bowtie is 5 bp).")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
@@ -1694,9 +1721,18 @@ def main():
         cdb = connect_db(args.database)
         db = cdb.cursor()
         use_db = True
-    else:
-        db = "%s/%s.gene_table" % (geneTableIndexDir, args.genome)
+        use_UCSC = False
+        
+    elif args.UCSCTable:
+        db = "%s/%s.UCSC_table" % (geneTableIndexDir, args.genome)
+        use_UCSC = True
         use_db = False
+        
+    else:
+        db = "%s/%s.gene_table" % (geneTableIndexDir, args.genome) # CHANGED!!!
+        use_db = False
+        use_UCSC = False
+    
 
     
     # Create output directory if it doesn't exist
@@ -1712,7 +1748,7 @@ def main():
         sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
     else:
         info.write(args.targets)
-        targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons)
+        targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, use_UCSC, db, padSize, args.targetRegion, args.exons) 
         sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, twoBitIndexDir, args.genome)
 
     # Convert genomic coordinates to fasta file of all possible 16-mers
