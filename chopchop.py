@@ -63,13 +63,15 @@ targetMax = 20000
 CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
                   "MAX_OFFTARGETS" : 50,
                   "MAX_MISMATCHES" : 0,
-                  "SCORE_GC" : True}
+                  "SCORE_GC" : True,
+                  "SCORE_FOLDING" : True}
 
 
 TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
                   "MAX_OFFTARGETS" : 100,
                   "MAX_MISMATCHES" : 2,
-                  "SCORE_GC" : False}
+                  "SCORE_GC" : False,
+                  "SCORE_FOLDING" : False}
 
 
 talenOffTargetMin = 28
@@ -88,7 +90,10 @@ SCORE = {"INPAIR_OFFTARGET_0" : 5000,
          "OFFTARGET_PAIR_DIFF_STRAND" : 5000,
          "MAX_OFFTARGETS" : 4000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
          "CRISPR_NO_G20" : 20,
-         "CRISPR_BAD_GC" : 500
+         "CRISPR_NO_G19" : 5,
+         "CRISPR_NO_C18" : 5,
+         "CRISPR_BAD_GC" : 500,
+         "FOLDING" : 300
          }
 
 SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
@@ -139,6 +144,10 @@ congAllowed = [True, True, True, True, True,
                False, False, False, False, False,
                False, False, False, False, False]
 
+
+# SELF-COMPLEMENTARITY
+stemLen = 4
+#backbone_exposed_1 = "ACGGACTAGCCT"  # Reverse complement of exposed region of backbone
 
 #####################
 ##
@@ -220,7 +229,7 @@ class Guide:
     """This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
     "sort_offTargets" applies to just the Tale class"""
 
-    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC):        
+    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, replace5prime=None):        
         # From the guide's name we can get the chromosome
         self.name = name
         self.flagSum = flagSum
@@ -267,26 +276,68 @@ class Guide:
             self.strand = "+"
             self.strandedGuideSeq = guideSeq
         else:
-            self.strandedGuideSeq = Seq(guideSeq).reverse_complement()
+            self.strandedGuideSeq = str(Seq(guideSeq).reverse_complement())
             self.strand = "-"
-                
-        # Calculate the GC content of the guide        
-        Gcount = guideSeq.count('G')
-        Ccount = guideSeq.count('C')        
-        self.GCcontent = (100*(float(Gcount+Ccount)/int(guideSize)))
 
-        if scoreGC:
-            if self.GCcontent > GChigh or self.GCcontent < GClow:
-                self.score += SCORE['CRISPR_BAD_GC']
-
-            if self.strandedGuideSeq[19] != "G":
-                self.score += SCORE['CRISPR_NO_G20']
+#        sys.stderr.write("** %s\n" % (self.strandedGuideSeq))                
 
         # Initiate offTargets list
         self.offTargets = []
         self.offTarget_hash = {}
         self.offTargets_sorted = False
     
+        # Scoring
+        self.calcGCContent(scoreGC)
+
+        if scoreSelfComp:
+            self.calcSelfComplementarity(scoreSelfComp, backbone_regions, replace5prime)
+        else:
+            self.folding ="N/A"
+
+
+    def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, replace5prime=None):   
+        if replace5prime:
+#            sys.stderr.write("REPLACE! %s\n" % replace5prime)
+            fwd = replace5prime+ self.strandedGuideSeq[len(replace5prime):-3] # The user intends to replace the 2 first bases with e.g. "GG"
+        else:
+            fwd = self.guideSeq[0:-3] # Do not include PAM motif in folding calculations
+
+#        sys.stderr.write("FWD: %s\n" % self.guideSeq)
+
+        rvs = str(Seq(fwd).reverse_complement())
+        L = len(fwd)-stemLen-1            
+
+
+        self.folding = 0
+        
+        for i in range(0,len(fwd)-stemLen):
+            if gccontent(fwd[i:i+stemLen]) >= 0.5:
+                if fwd[i:i+stemLen] in rvs[0:(L-i)] or any([fwd[i:i+stemLen] in item for item in backbone_regions]):
+                    sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+stemLen]))
+                    self.folding += 1
+                    
+        self.score += self.folding * SCORE['FOLDING']
+
+#        sys.stderr.write("-- %s\t%s\n" % (fwd, self.folding))
+
+
+    def calcGCContent(self,scoreGC):
+        # Calculate the GC content of the guide
+        Gcount = self.guideSeq.count('G')
+        Ccount = self.guideSeq.count('C')        
+        self.GCcontent = (100*(float(Gcount+Ccount)/int(self.guideSize)))
+
+        self.g20 = "-"
+        if scoreGC:
+            if self.GCcontent > GChigh or self.GCcontent < GClow:
+                self.score += SCORE['CRISPR_BAD_GC']
+
+            if self.strandedGuideSeq[19] == "G":
+                self.g20 = "Y"
+            else:
+                self.g20 = "N"
+                self.score += SCORE['CRISPR_NO_G20']
+
 
     def addOffTarget(self, hit, checkMismatch, maxOffTargets, allowedMMPos, countMMPos):        
         """  Add off target hits (and not original hit) to list for each guide RNA"""    
@@ -367,7 +418,7 @@ class Guide:
 
     def __str__(self):
         self.sort_offTargets()
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2])
+        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.g20, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2])
                   
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -411,14 +462,7 @@ class Pair:
         self.spacerEnd = tale2.start - 1
 
         self.enzymeCo = enzymeCo
-
-
-#        self.guideSeq = str(self.tale1.guideSeq) + "\n" + self.spacerSeq + "\n" + str(self.tale2.guideSeq)
-
-#        if self.strand == "+":
         self.strandedGuideSeq = str(self.tale1.guideSeq) + "\n" + self.spacerSeq + "\n" + str(self.tale2.guideSeq)
-#        elif self.strand == "-":
-#            self.strandedGuideSeq = Seq(self.tale1.guideSeq).reverse_complement() + "\n" + Seq(self.spacerSeq).reverse_complement() + "\n" + Seq(self.tale2.guideSeq).reverse_complement()
 
         # Calculate RVD for TALEs; FIX: use mapping
         for base in tale1.guideSeq:
@@ -500,6 +544,15 @@ class Pair:
 ##
 ## Functions
 ##
+def gccontent(seq):
+        gc = 0
+
+        for i in seq:
+                if i =='G' or i == 'g' or i == 'C' or i == 'c':
+                        gc = gc + 1
+        return( float(gc) / float(len(seq)) )
+
+
 def get_mismatch_pos(mismatchString):
     mismatches = []
 
@@ -688,6 +741,7 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         chrom = region[0:region.rfind(':')]
         start = int(region[region.rfind(':')+1:region.rfind('-')])
         finish = int(region[region.rfind('-')+1:])      
+        start = max(start, 0)
 
         # Run twoBitToFa program to get actual zebrafish dna sequence corresponding to input genomic coordinates
         # Popen runs twoBitToFa program. PIPE pipes stdout.
@@ -723,11 +777,6 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
     fastaFile.close()
 
     return sequences, fastaSeq
-
-
-
-
-
 
 
 def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets, indexDir, genome, maxMismatches):
@@ -767,7 +816,7 @@ def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffT
 
 
 
-def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, maxOffTargets, allowMM, countMM):
+def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM):
     """ Parses bowtie hits and build list of guides"""
     
     currGuide = None
@@ -779,7 +828,7 @@ def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, score
         for line in reader:
             #  Encountered a new guide RNA (not a new hit for the same guide)
             if currGuide == None or line[0] != currGuide.name:
-                currGuide = Guide(line[0], line[1], len(line[9]), line[9], scoreGC)
+                currGuide = Guide(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, replace5prime)
                 guideList.append(currGuide)
 
             # Adds hit to off-target list of current guide.
@@ -931,7 +980,7 @@ def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, max
         sys.stderr.write("Running bowtie on primers failed\n");
         sys.exit(EXIT['BOWTIE_PRIMER_ERROR']);
 
-    return parseBowtie("%s/primer_results.sam" % outputDir, False, [], [], False, maxOffTargets, None, None)
+    return parseBowtie("%s/primer_results.sam" % outputDir, False, [], [], False, False, None, None, maxOffTargets, None, None)
 
 
 def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
@@ -1431,15 +1480,10 @@ def eval_TALENS_sequence(name, targetSize, dna, num, fastaFile):
     return found
 
 
-
-
-
 def sort_TALEN_pairs(pairs):
     """ Sort pairs according to score and cluster """
 
     return sorted(pairs, key=attrgetter('score', 'cluster'))
-
-
 
 
 #####################
@@ -1779,7 +1823,10 @@ def main():
     parser.add_argument("-e", "--exon", help="Comma separated list of exon indices. Only find sites in this subset. ", metavar="EXON_NUMBER", dest="exons")   
     parser.add_argument("-G", "--genome", default="danRer7", metavar="GENOME", help="The genome to search.") 
     parser.add_argument("-g", "--guideSize", default=None, type=int, metavar="GUIDE_SIZE", help="The size of the guide RNA.")
-    parser.add_argument("-c", "--scoreGC", default=None, metavar="SCORE_GC", help="Score by GC content. True for CRISPR, False for TALENs.")
+    parser.add_argument("-c", "--scoreGC", default=None, action="store_false", help="Score GC content. True for CRISPR, False for TALENs.")
+    parser.add_argument("-SC", "--noScoreSelfComp", default=None, action="store_false", help="Do not penalize self-complementarity of CRISPR.")
+    parser.add_argument("-BB", "--backbone", default=None, metavar="BACKBONE", help="Penalize self-complementarity versus backbone regions (comma-separated list, same strand as guide). Requires -C.")
+    parser.add_argument("-R5", "--replace5P", default=None, metavar="REPLACE_5P", help="Replace bases from 5' end (with e.g. 'GG') ")  ## FIX: AT THE MOMENT THIS IS ONLY APPLIES TO FOLDING/SELF-COMPL
     parser.add_argument("-t", "--target", default="CODING", dest="targetRegion", help="Target the whole gene CODING/WHOLE/UTR5/UTR3/SPLICE. Default is CODING.")
     parser.add_argument("-T", "--findTalens", dest="MODE", action="store_const", const=TALENS, default=CRISPR,  help="Find TALEN sites. Default is CRISPR.")
     parser.add_argument("--taleMin", default=14, type=int, help="Minimum distance between TALENs. Default is 14.")  # 14 + 18(length of TALE) = 32
@@ -1809,16 +1856,22 @@ def main():
 
     # Set mode specific parameters if not set by user
     args.scoreGC = mode_select(args.scoreGC, "SCORE_GC", args.MODE)
+    args.scoreSelfComp = mode_select(args.noScoreSelfComp, "SCORE_FOLDING", args.MODE)
     args.guideSize = mode_select(args.guideSize, "GUIDE_SIZE", args.MODE) + len(args.PAM)
     args.maxMismatches = mode_select(args.maxMismatches, "MAX_MISMATCHES", args.MODE)
     args.maxOffTargets = mode_select(args.maxOffTargets, "MAX_OFFTARGETS", args.MODE)
 
+    if args.scoreSelfComp:
+        if args.backbone:
+            tmp = args.backbone.strip().split(",")
+#            sys.stderr.write("TMP(%s)" % tmp)
+            args.backbone = [str(Seq(el).reverse_complement()) for el in tmp]
+        else:
+            args.backbone = []
 
     # Set mismatch checking policy
 
     (allowedMM, countMM) = getMismatchVectors(args.PAM, args.uniqueMethod_Hsu, args.uniqueMethod_Cong)
-    sys.stderr.write("BEFORE: %s\n" % allowedMM)            
-
 
     # Pad each exon equal to guidesize unless
     if args.padSize != -1:
@@ -1871,7 +1924,7 @@ def main():
 
     # Run bowtie and get results
     bowtieResultsFile = runBowtie(args.uniqueMethod_Hsu, args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), bowtieIndexDir, args.genome, int(args.maxMismatches))
-    results = parseBowtie(bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.maxOffTargets, allowedMM, countMM)  # TALENS: MAKE_PAIRS + CLUSTER
+    results = parseBowtie(bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM)  # TALENS: MAKE_PAIRS + CLUSTER
 
     
     if args.MODE == CRISPR:
@@ -1904,9 +1957,9 @@ def main():
     resultCoords = []
 
     if args.MODE == CRISPR:
-        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tMM0\tMM1\tMM2"
+        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tG20\tSelf-complementarity\tMM0\tMM1\tMM2"
         for i in range(len(sortedOutput)):
-            print "%s\t%s" % (i+1, sortedOutput[i])
+            print "%s\t%s" % (i+1, sortedOutput[i])            
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
 
     elif args.MODE == TALENS:
