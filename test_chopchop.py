@@ -1,6 +1,6 @@
 #!/usr/bin/python
 import unittest
-from cutNseek import *
+from chopchop import *
 
 
 class FunctionsTest(unittest.TestCase):
@@ -9,26 +9,21 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(get_mismatch_pos("23"), [])
         self.assertEqual(get_mismatch_pos("0T20A1"), [0,21])
         self.assertEqual(get_mismatch_pos("21T1"), [21])
-
-    ### FIX
-    def test_coordToFasta(self):
-        region = ['Cap1_berg-2068c03.p1k:610-1673']
-        fastaFile = "temporary/test/sequence.fa"
-        outputDir = "temporary/test"
-        evalSeq = lambda name, guideSize, dna, num, fastaFile: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, allowed=allowed, PAM=args.PAM)
-        targetSize = 23
-        indexDir = "genomes"
-        genome = "Pberghei"
-        
-
-    def test_get_mismatch_pos(self):
-
         self.assertEqual([0], get_mismatch_pos("0A22"))
         self.assertEqual([1], get_mismatch_pos("1A21"))
         self.assertEqual([21], get_mismatch_pos("21A1"))
         self.assertEqual([22], get_mismatch_pos("22A"))
         self.assertEqual([0,22], get_mismatch_pos("A21T"))
 
+    ### FIX
+    def test_coordToFasta(self):
+        region = ['Cap1_berg-2068c03.p1k:610-1673']
+        fastaFile = "temporary/test/sequence.fa"
+        outputDir = "temporary/test"
+        #evalSeq = lambda name, guideSize, dna, num, fastaFile: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, allowed=allowed, PAM=args.PAM)
+        targetSize = 23
+        indexDir = "genomes"
+        genome = "Pberghei"
 
     def test_getMismatchVectors(self):
         pass

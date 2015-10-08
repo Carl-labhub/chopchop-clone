@@ -2,12 +2,6 @@
 
 #####################
 ##
-## BLAH BLAH OUT PROGRAM IS AWESOME AND DOES THIS AND THIS
-##
-## ALL YOUR COPY BELONG TO US!!!
-
-#####################
-##
 ## Imports
 ##
 import sys
@@ -43,9 +37,9 @@ from subprocess import Popen, PIPE
 
 
 # PATHs
-primer3="bin/primer3_core"
+primer3="primer3_core"
 bowtie = "bowtie"
-twoBitToFa="bin/twoBitToFa"
+twoBitToFa="twoBitToFa"
 twoBitIndexDir="genomes"
 bowtieIndexDir = "genomes"
 geneTableIndexDir = "genomes"
@@ -68,10 +62,10 @@ CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
 
 
 TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
-                  "MAX_OFFTARGETS" : 100,
-                  "MAX_MISMATCHES" : 2,
-                  "SCORE_GC" : False,
-                  "SCORE_FOLDING" : False}
+                 "MAX_OFFTARGETS" : 100,
+                 "MAX_MISMATCHES" : 2,
+                 "SCORE_GC" : False,
+                 "SCORE_FOLDING" : False}
 
 
 talenOffTargetMin = 28
@@ -93,8 +87,7 @@ SCORE = {"INPAIR_OFFTARGET_0" : 5000,
          "CRISPR_NO_G19" : 5,
          "CRISPR_NO_C18" : 5,
          "CRISPR_BAD_GC" : 500,
-         "FOLDING" : 300
-         }
+         "FOLDING" : 300}
 
 SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
 GClow = 40
@@ -109,8 +102,7 @@ EXIT = {"PYTHON_ERROR" : 1,
         "DB_ERROR" : 5,
         "PRIMER3_ERROR" : 6,
         "BOWTIE_PRIMER_ERROR" : 7,
-        "ISOFORM_ERROR" : 8
-        }
+        "ISOFORM_ERROR" : 8}
 
 
 # PRIMER3 OPTIONS
@@ -135,9 +127,6 @@ defAllowed = [True, True, True, True, True,
               True, True, True, True, True,
               True, True, True, True, True,
               True, True, True, True, True]
-#              True, False, False]
-
-
 
 congAllowed = [True, True, True, True, True,
                True, True, True, True, False,
@@ -321,7 +310,7 @@ class Guide:
 #        sys.stderr.write("-- %s\t%s\n" % (fwd, self.folding))
 
 
-    def calcGCContent(self,scoreGC):
+    def calcGCContent(self, scoreGC):
         # Calculate the GC content of the guide
         Gcount = self.guideSeq.count('G')
         Ccount = self.guideSeq.count('C')        
@@ -576,7 +565,7 @@ def get_mismatch_pos(mismatchString):
 
     # Include letters at the end
     if (mismatchString[-1].isalpha()):
-         mismatches.append(current)
+        mismatches.append(current)
 
     return mismatches
 
@@ -707,7 +696,6 @@ def geneToCoord_db(gene, organism, db, guideSize, index):
     return (_geneLineToCoord(line, guideSize), line[4], line[5], line[6])
 
 
-
 def geneToCoord_file(geneIN, tableFile, guideSize, index):    
     """ Extracts coordinates of genomic regions to parse for suitable guide binding sites """
 
@@ -769,13 +757,13 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         name = "C:%s:%d-%d" % (chrom, start, finish)
 ##        name = "%s:%d-%d" % (chrom, start+1, finish+1)
 
-        # Loop over exon sequence, write every 23-mer into file in which 23-mer ends in GG in fasta format 
+        # Loop over exon sequence, write every g-mer into file in which g-mer ends in GG in fasta format 
         for num in range(0,len(dna)-(targetSize-1)):           
             if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)], num, fastaFile):
                 sequences[name] = dna
 
     fastaFile.close()
-
+    
     return sequences, fastaSeq
 
 
@@ -783,28 +771,22 @@ def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffT
     """ Runs bowtie """
 
     bowtieResultsFile = '%s/output.sam' % outputDir
-    
-    # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the -n option. Outside of that seed, up to 2 mismatches are searched. E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 2 mismatches
+
     if uniqueMethod_Hsu:
-#        sys.stderr.write("Using Hsu method for searching\n")
         command = "%s -v 2 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (bowtie, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
     elif uniqueMethod_Cong:
-#        sys.stderr.write("Using Cong method for searching\n")
-#        command = "%s -l 15 -n 0 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (bowtie, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
+        # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the -n option. Outside of that seed, up to 2 mismatches are searched. 
+        # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 2 mismatches
         command = "%s -l 14 -n 1 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (bowtie, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
-
     else:
-#        sys.stderr.write("Using unique hit method for searching\n")
-        #The -v tag in bowtie specifies how many mismatches bowtie will allow, in our case 2. the -f tag specifies the query sequences
-        #are in fasta format.  The no-head tag specifies that the output files will not contain a header portion. -k specifies up to
-        #how many good reads will be reported (5 in our case).
+        # The -v tag in bowtie specifies how many mismatches bowtie will allow.
+        # The --sam-nohead tag specifies that the output files will not contain a header portion. 
+        # -m Supresses all alignments a particular read or pair if more than maxOffTargets reportable alignments exist for it
+        # -k specifies up to how many good reads will be reported (50 in our case).
         command = "%s -v %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (bowtie, maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
 
     sys.stderr.write("%s\n" % command)
     prog = Popen(command, shell=True)
-    #prog = Popen("%s/%s -v 2 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (indexDir, bowtie, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir), shell=True)      
-
-    # We wait for bowtie2 to finish executing, lest python skips to the next lines without completing all alignments.
     prog.wait()
 
     if (prog.returncode != 0):
@@ -814,16 +796,14 @@ def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffT
     return bowtieResultsFile
 
 
-
-
 def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM):
     """ Parses bowtie hits and build list of guides"""
     
     currGuide = None
     guideList = []
 
-    with open(bowtieResultsFile, 'rb') as file:  
-        reader = csv.reader(file, delimiter='\t', quoting=csv.QUOTE_NONE)
+    with open(bowtieResultsFile, 'rb') as bowtieFile:  
+        reader = csv.reader(bowtieFile, delimiter='\t', quoting=csv.QUOTE_NONE)
 
         for line in reader:
             #  Encountered a new guide RNA (not a new hit for the same guide)
@@ -1039,7 +1019,6 @@ def make_primers_genome(targets, outputDir, flanks, genome, limitPrintResults, b
     pairPrimers(primers, primerResults, outputDir)
 
 
-
 def dump_restriction_sites(target, seq, flanks, enzymeCo, outputDir, minResSiteLen):
     sites = findRestrictionSites(seq, enzymeCo, minResSiteLen)
     out = [map(lambda x : [str(enzyme), x + target.start-flanks, enzyme.size], sites[enzyme]) for enzyme in sites]
@@ -1077,6 +1056,7 @@ def dump_restriction_sites(target, seq, flanks, enzymeCo, outputDir, minResSiteL
 
     return sites
 
+
 def dump_locus_sequence(target, outputDir, seq, seqLenBeforeTarget, strand):
     if strand == "-":
         seq = str(Seq(seq).complement())
@@ -1102,7 +1082,6 @@ def dump_genbank_file(seq, target, restSites, primers, outputDir, geneID, lociSt
         ts = -1
         
     record.features.append(SeqFeature(FeatureLocation(target.start-lociStart-1, target.end-lociStart-1, strand=ts), type = "Target"))
-#    record.features.append(SeqFeature(FeatureLocation(target.start-lociStart, target.end-lociStart, strand=ts), type = "Target"))
 
     for primer in primers:
         record.features.append(SeqFeature(FeatureLocation(primers[primer][0], primers[primer][1]), type = primer))
@@ -1187,7 +1166,7 @@ PRIMER_EXPLAIN_FLAG=1
     f.close()
 
     command = "%s < %s 2>> %s/primer3.error" % (primer3, primer3InputFile, outputDir)
-##    sys.stderr.write("%s\n" % command)
+    # sys.stderr.write("%s\n" % command)
     prog = Popen(command, stdout = PIPE, shell=True)
     output = prog.communicate()
 
@@ -1219,7 +1198,6 @@ def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, m
             fileHandler[current.ID] = open(resultsFile, 'w')
         f = fileHandler[current.ID]
 
-
         # Add the current TALE pair to the appropriate list in the list of lists, depending on its cluster number            
         if mode == TALENS:
             clusterID = current.cluster
@@ -1231,7 +1209,6 @@ def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, m
 
         f.write(str(current.strandedGuideSeq)+"\n"+offTargets+"\n")
                 
-    
     for clust in clusters:
         if len(clust) == 0:
             continue
@@ -1243,17 +1220,16 @@ def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, m
 
         fileHandler[bestInCluster.ID].write("\n"+current.restrictionSites+"\n")
 
-
     for fh in fileHandler.values():
         fh.close()
         
     return clusters            
 
+
 def findRestrictionSites(sequence, enzymeCompany, minSize=1):
     # Take spacerSeq as DNA input for restriction site search
     mySeq = Seq(sequence, IUPACAmbiguousDNA())
 
-    
     # Restricts enzyme possibilities to NEB enzymes. Can ultimately change to any supplier.
     rb = RestrictionBatch(first=[], suppliers=[enzymeCompany])        
 
@@ -1263,7 +1239,6 @@ def findRestrictionSites(sequence, enzymeCompany, minSize=1):
     # Determine which restriction enzymes cut in the sequence provided
     analyze = Analysis(rb, mySeq)
     return analyze.with_sites()
-
 
 
 #####################
@@ -1288,13 +1263,13 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, allowed, PAM="NGG
                 add = False
                 break
             
-        # in order to control the number of mismatches to search in the last 8 or 3 bps, need to reverse complement so the seed region can be at the start
+        # in order to control the number of mismatches to search in the last 8 or 3 bps, 
+        # need to reverse complement so the seed region can be at the start
         # rather than end of the sequence
         if add:
             dna = dna.reverse_complement()    
             fastaFile.write('>%s_%d-%d\n%s\n' % (name, num, num+guideSize, dna))
             return True
-
 
     if str(dna[-2:].reverse_complement()) in allowed:
         add = True
@@ -1313,19 +1288,16 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, allowed, PAM="NGG
     return False
 
 
-
-
-
 def sort_CRISPR_guides(guides):
     """ Sort pairs according to score  """
     return sorted(guides, key=attrgetter('score'))
-
 
 
 #####################
 ##
 ## TALEN SPECIFIC FUNCTIONS
 ##
+
 
 def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, enzymeCo, maxOffTargets, g_RVD, minResSiteLen):
     pairs = []
@@ -1342,7 +1314,7 @@ def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, 
                 break 
 
             # If pairs are within the correct range of one another and one tale begins with T, while the other ends with A...
-#            elif tale1.start + taleMinDistance < tale2.start and tale1.guideSeq[0] == "T" and tale2.guideSeq[guideSize-1] == "A" and tale1.strand == "+" and tale2.strand == "-":
+            # elif tale1.start + taleMinDistance < tale2.start and tale1.guideSeq[0] == "T" and tale2.guideSeq[guideSize-1] == "A" and tale1.strand == "+" and tale2.strand == "-":
             elif tale1.start + taleMinDistance < tale2.start and tale1.guideSeq[0] == "T" and tale2.guideSeq[guideSize-1] == "A":
 
                 # EDV: Are all these find calls faster than a regular expression?
@@ -1352,7 +1324,7 @@ def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, 
 
                 # Make sure the two TALENs are on the same "slice", only a problem for overlapping padding regions
                 pos2 = tale2.name.find('_')
-                exon2 = tale2.name[:pos]
+                exon2 = tale2.name[:pos2]
                 if exon1 != exon2:
                     continue
 
@@ -1413,9 +1385,6 @@ def has_Off_targets(tale1, tale2, offTargetMin, offTargetMax):
     return offTargetPairs
 
 
-
-
-
 def clusterPairs(pairs):
     """ Clusters paired sequences according to overlap, so user knows which TALE pairs are redundant """
 
@@ -1434,7 +1403,7 @@ def clusterPairs(pairs):
         if ((cur.spacerStart <= prev.spacerEnd) and (cur.spacerEnd >= prev.spacerStart) and inCluster < maxInCluster):
 
             # Checks whether spacer overlap is >50%, in which case tale pairs are somewhat redundant, and should be part of the same cluster
-#            if (cur.spacerEnd - prev.spacerStart+1) > (0.9*(cur.spacerSize+prev.spacerSize)):
+            # if (cur.spacerEnd - prev.spacerStart+1) > (0.9*(cur.spacerSize+prev.spacerSize)):
                 # Adds current cluster to pairs list
             cur.cluster = cluster
             inCluster += 1
@@ -1447,30 +1416,13 @@ def clusterPairs(pairs):
     return (cluster, pairs)
 
 
-
-
-# def eval_TALENS_sequence(name, targetSize, dna, num, fastaFile):
-#     """ Evaluates an N-mer as a potential TALENs target site """
-
-#     # One TALE must start with a T and the other must end in an A, such that each on its respective strand begins with a T
-#     if dna[0] == "T":
-#         dna = Seq(dna).reverse_complement()    
-#         fastaFile.write('>%s_%d-%d\n%s\n' % (name, num, num+targetSize, dna))
-#         return True
-#     elif dna[-1] == "A":
-#         # +1 is so Bed file genomic coordinates are one-indexed like bowtie SAM output and UCSD website.
-#         fastaFile.write('>%s_%d-%d\n%s\n' % (name, num, num+targetSize, dna))
-#         return True
-
-#     return False
-
 def eval_TALENS_sequence(name, targetSize, dna, num, fastaFile):
     """ Evaluates an N-mer as a potential TALENs target site """
     found = False
 
     # One TALE must start with a T and the other must end in an A, such that each on its respective strand begins with a T
     if dna[0] == "T":
-#        dna = Seq(dna).reverse_complement()    
+        # dna = Seq(dna).reverse_complement()    
         fastaFile.write('>%s_%d-%d\n%s\n' % (name, num, num+targetSize, dna))
         found = True
     elif dna[-1] == "A":
@@ -1491,6 +1443,7 @@ def sort_TALEN_pairs(pairs):
 ## JASON visualization
 ##
 
+
 def complement(sequence):
     return sequence.translate(string.maketrans("ACGT", "TGCA"))
 
@@ -1501,7 +1454,7 @@ def FastaToViscoords(sequences, strand):
     exonsequence = []
 
     for exon in sequences:
-#        sys.stderr.write("%s\n" % exon)
+        # sys.stderr.write("%s\n" % exon)
         exonlist = exon.split(':')
         exoncoord = exonlist[2].split('-')
         exonstart.append(exoncoord[0])
@@ -1562,7 +1515,7 @@ def coordsToJson(coords, cdsStart, cdsEnd, strand):
 
             newCoords.append([coord[0], coord[1], coord[2], coord[3], VIS_WIDTH['CDS'], strand])
 
- #           if coord[1] >= cdsStart and coord[2] <= cdsEnd:
+#           if coord[1] >= cdsStart and coord[2] <= cdsEnd:
 #                newCoords.append([coord[0], coord[1], coord[2], coord[3], VIS_WIDTH['CDS']])
 
 
@@ -1641,7 +1594,7 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
 
         if target_strand == None:
             target_strand = strand
-        elif taret_strand != strand:
+        elif target_strand != strand:
             sys.stderr.write("All targets must be on the same strand.\n")
             sys.exit(EXIT['GENE_ERROR'])
 
@@ -1677,7 +1630,6 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
             sys.stderr.write("Unknown region: %s\n" % targetRegion);
             sys.exit(EXIT['PYTHON_ERROR']);
 
-
         for exon in coords:
             targetSize += exon[2] - exon[1] + 1
 
@@ -1706,7 +1658,7 @@ def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc
 
     
     name = "%s:1-%s" % (seq_name, len(sequence))
-    id = "C:" + name 
+    idName = "C:" + name 
     sequence = sequence.upper()
     sequence = "".join(sequence.split())
 
@@ -1721,8 +1673,8 @@ def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc
 
     # Loop over sequence, write every 23-mer into file in which 23-mer ends in GG in fasta format 
     for num in range(0,len(sequence)-(targetSize-1)):
-        if evalAndPrintFunc(id, targetSize, sequence[num:(num + targetSize)], num, candidateFastaFile):
-            sequences[id] = sequence
+        if evalAndPrintFunc(idName, targetSize, sequence[num:(num + targetSize)], num, candidateFastaFile):
+            sequences[idName] = sequence
 
     return (sequences, [name], [1], [[seq_name, 1, len(sequence), 0, 20, "+"]], sequence, "+")
 
@@ -1739,7 +1691,10 @@ def hyphen_range(s):
     for x in s.split(','):
         t = x.split('-')
         if len(t) not in [1,2]: raise SyntaxError("Range is not properly formatted: "+ s)
-        r.add(int(t[0])) if len(t)==1 else r.update(set(range(int(t[0]),int(t[1])+1)))
+        if len(t)==1: 
+            r.add(int(t[0])) 
+        else: 
+            r.update(set(range(int(t[0]),int(t[1])+1)))
 
     l = list(r)
     l.sort()
@@ -1864,13 +1819,11 @@ def main():
     if args.scoreSelfComp:
         if args.backbone:
             tmp = args.backbone.strip().split(",")
-#            sys.stderr.write("TMP(%s)" % tmp)
             args.backbone = [str(Seq(el).reverse_complement()) for el in tmp]
         else:
             args.backbone = []
 
     # Set mismatch checking policy
-
     (allowedMM, countMM) = getMismatchVectors(args.PAM, args.uniqueMethod_Hsu, args.uniqueMethod_Cong)
 
     # Pad each exon equal to guidesize unless
@@ -1900,18 +1853,14 @@ def main():
         db = "%s/%s.gene_table" % (geneTableIndexDir, args.genome)
         use_db = False
 
-    
     ## Create output directory if it doesn't exist
     if not os.path.isdir(args.outputDir):
         os.mkdir(args.outputDir)
     
-
     candidateFastaFile = '%s/sequence.fa' % args.outputDir
     if args.fasta:
-        outTarget = "INPUT SEQUENCE"
         sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
     else:
-        outTarget = args.targets
         targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons)
         sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, twoBitIndexDir, args.genome)
 
@@ -2039,5 +1988,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
