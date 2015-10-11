@@ -146,7 +146,6 @@ stemLen = 4
 class Hit:
     """Creates class for each hit from bowtie."""    
 
-
     def __init__(self, line):    
         self.flagSum = int(line[1])
         self.chrom = line[2]
@@ -211,12 +210,9 @@ class Hit:
         return "%s,%s,%s,%s" % (label, self.chrom + ":" + str(self.start), self.mismatch[-1], self.matchSeq)
 
 
-
-
-
 class Guide:
-    """This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
-    "sort_offTargets" applies to just the Tale class"""
+    """ This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
+    "sort_offTargets" applies to just the Tale class """
 
     def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, replace5prime=None):        
         # From the guide's name we can get the chromosome
@@ -226,7 +222,6 @@ class Guide:
         elements = name.split(":")
         self.ID = elements[0]
         self.chrom = elements[1]
-#        sys.stderr.write("%s" % elements)
         coord = elements[2]
 
         self.guideSize = guideSize
@@ -266,9 +261,7 @@ class Guide:
             self.strandedGuideSeq = guideSeq
         else:
             self.strandedGuideSeq = str(Seq(guideSeq).reverse_complement())
-            self.strand = "-"
-
-#        sys.stderr.write("** %s\n" % (self.strandedGuideSeq))                
+            self.strand = "-"            
 
         # Initiate offTargets list
         self.offTargets = []
@@ -286,16 +279,12 @@ class Guide:
 
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, replace5prime=None):   
         if replace5prime:
-#            sys.stderr.write("REPLACE! %s\n" % replace5prime)
-            fwd = replace5prime+ self.strandedGuideSeq[len(replace5prime):-3] # The user intends to replace the 2 first bases with e.g. "GG"
+            fwd = replace5prime+ self.strandedGuideSeq[len(replace5prime):-3] # Replace the 2 first bases with e.g. "GG"
         else:
             fwd = self.guideSeq[0:-3] # Do not include PAM motif in folding calculations
 
-#        sys.stderr.write("FWD: %s\n" % self.guideSeq)
-
         rvs = str(Seq(fwd).reverse_complement())
         L = len(fwd)-stemLen-1            
-
 
         self.folding = 0
         
@@ -307,11 +296,9 @@ class Guide:
                     
         self.score += self.folding * SCORE['FOLDING']
 
-#        sys.stderr.write("-- %s\t%s\n" % (fwd, self.folding))
-
 
     def calcGCContent(self, scoreGC):
-        # Calculate the GC content of the guide
+        """ Calculate the GC content of the guide """
         Gcount = self.guideSeq.count('G')
         Ccount = self.guideSeq.count('C')        
         self.GCcontent = (100*(float(Gcount+Ccount)/int(self.guideSize)))
@@ -329,13 +316,12 @@ class Guide:
 
 
     def addOffTarget(self, hit, checkMismatch, maxOffTargets, allowedMMPos, countMMPos):        
-        """  Add off target hits (and not original hit) to list for each guide RNA"""    
+        """ Add off target hits (and not original hit) to list for each guide RNA """    
 
         hit_id = "%s:%s" % (hit.chrom, hit.start)
         nmiss = 0
         mm_pattern = re.compile('NM:i:(\d+)')
        
-
         # If the hit is identical to the guide coord it is the original correct hit
         if self.chrom == hit.chrom and self.start == hit.start:
             # This is the original/main hit
@@ -388,7 +374,7 @@ class Guide:
         self.offTargets_sorted = False
 
     def numOffTargets(self):
-        """Returns the number of off-target hits for each guide"""
+        """ Returns the number of off-target hits for each guide """
         self.sort_offTargets()
         return len(self.offTargets)
 
@@ -417,11 +403,8 @@ class Guide:
         return ";".join(offTargets)
 
         
-
-
-# Pair class for 2 TALEs that are the correct distance apart
-
-class Pair:   
+class Pair:
+    """ Pair class for 2 TALEs that are the correct distance apart """
     def __init__(self, tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, g_RVD, minResSiteLen):
         self.tale1 = tale1
         self.tale2 = tale2
@@ -511,9 +494,6 @@ class Pair:
         return "%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (sequence, self.chrom, self.start, self.tale1.exonNum, self.tale1.rvd, self.tale2.rvd, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], self.restrictionSites)
 
 
-        
-
-
     def asOffTargetString(self, label, maxOffTargets):
         pairs = []
 
@@ -533,6 +513,8 @@ class Pair:
 ##
 ## Functions
 ##
+
+
 def gccontent(seq):
         gc = 0
 
@@ -583,7 +565,6 @@ def truncateToUTR5(cdsStart, exons, indices):
     return (exons[:(endExon+1)], indices[:(endExon+1)])
 
 
-
 def truncateToUTR3(cdsEnd, exons, indices):
     """ Truncates the gene to only target 3' UTR """
 
@@ -597,7 +578,6 @@ def truncateToUTR3(cdsEnd, exons, indices):
     return (exons[startExon:], indices[startExon:])
 
 
-
 def truncateToSplice(exons, indices):
     """ Truncates the gene to only target splice sites """
 
@@ -609,7 +589,6 @@ def truncateToSplice(exons, indices):
 
     # Remove first and last (i.e. transcription start and termination site)
     return (spliceSites[1:len(spliceSites)-1], indices[1:len(spliceSites)-1])
-
 
 
 def truncateToCoding(cdsStart, cdsEnd, exons, indices):
@@ -630,8 +609,6 @@ def truncateToCoding(cdsStart, cdsEnd, exons, indices):
     
     if startExon > endExon:
         startExon, endExon = endExon, startExon
-
-#    sys.stderr.write("B: %s - %s  (%s)\n" % (startExon, endExon+1, exons[0:2]))
 
     # Shorten list to include exons from cds start to end
     return (exons[startExon:(endExon+1)], indices[startExon:(endExon+1)])
