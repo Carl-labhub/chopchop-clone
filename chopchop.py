@@ -9,6 +9,7 @@ import csv
 
 import os
 
+import math
 import numpy
 import subprocess
 import argparse
@@ -93,6 +94,26 @@ SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
 GClow = 40
 GChigh = 80
 
+Xu2015 = {'C18':-0.113781378,
+          'G17':0.080289971,
+          'A16':0.025840846,'G16':0.072680697,
+          'G15':0.100642827,
+          'G14':0.082839514,
+          'T14':-0.070933894,
+          'A12':0.02156311,
+          'A11':0.129118902,
+          'A10':0.030483786,'T10':-0.169986128,
+          'A9':0.093646913,
+          'G7':-0.214271553,'T7':0.073750154,
+          'A6':0.202820147,
+          'A5':0.129158071,
+          'G4':0.107523301,'T4':-0.349240474,
+          'C3':0.23502822,'T3':-0.145493093,
+          'G2':0.238517854,'T2':-0.300975354,
+          'C1':-0.125927965,'G1':0.353047311,'T1':-0.221752041,
+          'PAMT0':-0.155910373,
+          '1C':0.179639101,
+          '4T':-0.116646129}
 
 # EXIT CODES
 EXIT = {"PYTHON_ERROR" : 1,
@@ -267,14 +288,15 @@ class Guide:
         self.offTargets = []
         self.offTarget_hash = {}
         self.offTargets_sorted = False
-    
-        # Scoring
-        self.calcGCContent(scoreGC)
 
         if scoreSelfComp:
             self.calcSelfComplementarity(scoreSelfComp, backbone_regions, replace5prime)
         else:
             self.folding ="N/A"
+            
+        # Scoring
+        self.calcGCContent(scoreGC)
+        self.Xu2015score = scoregRNA(self.strandedGuideSeq[:-3], self.strandedGuideSeq[-3:], '', Xu2015)
 
 
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, replace5prime=None):   
@@ -393,7 +415,7 @@ class Guide:
 
     def __str__(self):
         self.sort_offTargets()
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.g20, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2])
+        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.g20, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.Xu2015score)
                   
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -513,7 +535,28 @@ class Pair:
 ##
 ## Functions
 ##
-
+def scoregRNA(seq, PAM, tail, lookup):
+    """ Calculate score from model coefficients. score is 0-1, higher is better """
+    score = 0
+    seq = seq[::-1]
+    
+    for i in range(len(seq)):
+        key = seq[i] + str(i+1)
+        if lookup.has_key(key):
+            score += lookup[key]
+    
+    for i in range(len(PAM)):
+        key = 'PAM' + PAM[i] + str(i+1)
+        if lookup.has_key(key):
+            score += lookup[key]
+            
+    for i in range(len(tail)):
+        key = str(i+1) + tail[i]
+        if lookup.has_key(key):
+            score += lookup[key]
+    
+    score = 1/(1 + math.e** -score)
+    return score
 
 def gccontent(seq):
         gc = 0
@@ -728,7 +771,7 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         dna = ''.join(exons[1:]).upper()
 
         # Write exon sequences to text file user can open in ApE. exon-intron junctions in lowercase.
-        fastaSeq += dna[0].lower()+dna[:-2]+dna[-1].lower()
+        fastaSeq += dna[0].lower()+dna[2:-2]+dna[-1].lower()
 
         # Add 1 due to BED 0-indexing
         name = "C:%s:%d-%d" % (chrom, start, finish)
@@ -1883,7 +1926,7 @@ def main():
     resultCoords = []
 
     if args.MODE == CRISPR:
-        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tG20\tSelf-complementarity\tMM0\tMM1\tMM2"
+        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tG20\tSelf-complementarity\tMM0\tMM1\tMM2\tXu2015"
         for i in range(len(sortedOutput)):
             print "%s\t%s" % (i+1, sortedOutput[i])            
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
