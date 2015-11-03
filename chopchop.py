@@ -4,29 +4,21 @@
 ##
 ## Imports
 ##
+import re
+import os
 import sys
 import csv
-
-import os
-
-import math
-import numpy
-import subprocess
-import argparse
-import re
 import copy
-import string
-
+import math
 import json
-from json import JSONEncoder
+import string
+import argparse
 
-from Bio import *
-from Bio import SeqIO
-from Bio.Restriction import *
+from Bio import SeqIO, SeqFeature, SeqRecord
+from Bio.Restriction import Analysis, RestrictionBatch
 from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 from Bio.Alphabet.IUPAC import IUPACAmbiguousDNA
-from Bio.SeqFeature import SeqFeature, FeatureLocation
+from Bio.SeqFeature import FeatureLocation
 from operator import itemgetter, attrgetter
 from subprocess import Popen, PIPE
 
@@ -36,23 +28,20 @@ from subprocess import Popen, PIPE
 ## Global variables
 ##
 
-
 # PATHs
-primer3="primer3_core"
-bowtie = "bowtie"
-twoBitToFa="twoBitToFa"
-twoBitIndexDir="genomes"
-bowtieIndexDir = "genomes"
-geneTableIndexDir = "genomes"
-
+PRIMER3 = "primer3_core"
+BOWTIE = "bowtie"
+TWOBITTOFA = "twoBitToFa"
+TWOBIT_INDEX_DIR = "genomes"
+BOWTIE_INDEX_DIR = "genomes"
+GENE_TABLE_INDEX_DIR = "genomes"
 
 # Program mode
-CRISPR=1
-TALENS=2
+CRISPR = 1
+TALENS = 2
 
 # Maximum genomic region that can be searched
 targetMax = 20000
-
 
 # Defaults
 CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
@@ -94,7 +83,7 @@ SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
 GClow = 40
 GChigh = 80
 
-Xu2015 = {'C18':-0.113781378,
+XU_2015 = {'C18':-0.113781378,
           'G17':0.080289971,
           'A16':0.025840846,'G16':0.072680697,
           'G15':0.100642827,
@@ -111,7 +100,7 @@ Xu2015 = {'C18':-0.113781378,
           'C3':0.23502822,'T3':-0.145493093,
           'G2':0.238517854,'T2':-0.300975354,
           'C1':-0.125927965,'G1':0.353047311,'T1':-0.221752041,
-          'PAMT0':-0.155910373,
+          'PAMT1':-0.155910373,
           '1C':0.179639101,
           '4T':-0.116646129}
 
@@ -157,7 +146,6 @@ congAllowed = [True, True, True, True, True,
 
 # SELF-COMPLEMENTARITY
 stemLen = 4
-#backbone_exposed_1 = "ACGGACTAGCCT"  # Reverse complement of exposed region of backbone
 
 #####################
 ##
@@ -172,7 +160,7 @@ class Hit:
         self.chrom = line[2]
         self.start = int(line[3])
         self.matchSeq = line[9]
-        self.mismatch = line[-1] # or should this be -2?
+        self.mismatch = line[-1]
         self.mismatchPos = line[-2]
         self.opts = line[11:(len(line))]
         self.mismatchCorrected = False
@@ -296,7 +284,7 @@ class Guide:
             
         # Scoring
         self.calcGCContent(scoreGC)
-        self.Xu2015score = scoregRNA(self.strandedGuideSeq[:-3], self.strandedGuideSeq[-3:], '', Xu2015)
+        self.Xu2015score = scoregRNA(self.strandedGuideSeq[:-3], self.strandedGuideSeq[-3:], '', XU_2015)
 
 
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, replace5prime=None):   
@@ -753,7 +741,7 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
 
         # Run twoBitToFa program to get actual zebrafish dna sequence corresponding to input genomic coordinates
         # Popen runs twoBitToFa program. PIPE pipes stdout.
-        prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (twoBitToFa, chrom, start, finish, indexDir, genome, outputDir), stdout = PIPE, shell=True)    
+        prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (TWOBITTOFA, chrom, start, finish, indexDir, genome, outputDir), stdout = PIPE, shell=True)    
 
         # Communicate converts stdout to a string
         output = prog.communicate()  
@@ -775,7 +763,6 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
 
         # Add 1 due to BED 0-indexing
         name = "C:%s:%d-%d" % (chrom, start, finish)
-##        name = "%s:%d-%d" % (chrom, start+1, finish+1)
 
         # Loop over exon sequence, write every g-mer into file in which g-mer ends in GG in fasta format 
         for num in range(0,len(dna)-(targetSize-1)):           
@@ -793,17 +780,17 @@ def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffT
     bowtieResultsFile = '%s/output.sam' % outputDir
 
     if uniqueMethod_Hsu:
-        command = "%s -v 2 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (bowtie, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
+        command = "%s -v 2 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
     elif uniqueMethod_Cong:
         # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the -n option. Outside of that seed, up to 2 mismatches are searched. 
         # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 2 mismatches
-        command = "%s -l 14 -n 1 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (bowtie, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
+        command = "%s -l 14 -n 1 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
     else:
         # The -v tag in bowtie specifies how many mismatches bowtie will allow.
         # The --sam-nohead tag specifies that the output files will not contain a header portion. 
         # -m Supresses all alignments a particular read or pair if more than maxOffTargets reportable alignments exist for it
         # -k specifies up to how many good reads will be reported (50 in our case).
-        command = "%s -v %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (bowtie, maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
+        command = "%s -v %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
 
     sys.stderr.write("%s\n" % command)
     prog = Popen(command, shell=True)
@@ -857,7 +844,6 @@ def parse_primer3_output(target, region, primer3output, primerFastaFile):
     position, length = 0,0
     
     for line in primer3output.split("\n"):
-#        sys.stderr.write("%s\n" % line)
         if line[0] == "=":
             break 
 
@@ -877,46 +863,8 @@ def parse_primer3_output(target, region, primer3output, primerFastaFile):
                 primerPos[label] = [s,e]
 
                 primerFastaFile.write(">%s_%s_%s:%s_%s-%s\n%s\n" % (target.ID, m.group(2), m.group(1), region, s, e, primers[(m.group(2), m.group(1), "SEQUENCE")]))
-#                primerFastaFile.write(">%s_%s_%s:%s_%s-%s\n%s\n" % (target.ID, m.group(2), m.group(1), region, int(position), int(position)+int(length), primers[(m.group(2), m.group(1), "SEQUENCE")]))
-               
+
     return primers, primerPos
-
-
-#     primers = {}
-
-#     # Parse primer3 options. Update config if known option, otherwise append to primer3 input file
-#     primerOpt = ""
-#     if primer3options:
-#         for opt in primer3options.split(","):
-#             key, value = opt.split("=")
-#             if PRIMER3_CONFIG.has_key(key):
-#                 PRIMER3_CONFIG[key] = value
-#             else:
-#                 primerOpt += opt + "\n"
-
-#     fastaSequence
-
-#     # RUN PRIMER3 ON TARGET SITES AND CREATE FASTA FILE OF PRIMERS FOR BOWTIE
-#     primerFastaFile = open('%s/primers.fa' % outputDir, 'w')
-#     for i in range(min(limitPrintResults-1, len(targets))):
-#         target = targets[i]        
-
-#         fastaSequence[]
-        
-#         ("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err\n" % (twoBitToFa, target.chrom, target.start-flanks, target.end+flanks, twoBitToFaIndexDir, genome, outputDir))
-
-
-#         region = "%s:%s-%s" % (target.chrom, target.start-flanks, target.end+flanks)
-
-
-#         output = output[0].split("\n")
-#         del(output[0])
-
-#         primer3_output = make_primer_for_target(target, outputDir, "".join(output), flanks, primerOpt, guidePadding)
-#         target_primers = parse_primer3_output(target, region, primer3_output, primerFastaFile)
-#         primers[target.ID] = target_primers
-# #        sys.stderr.write("T: (%s)\n" % target.ID)
-#     primerFastaFile.close()
     
 
 def get_primer_options(options):
@@ -956,7 +904,7 @@ def get_primer_query_sequence_2bit(target, outputDir, flank, genome, twoBitToFaI
         seqLenBeforeTarget -= abs(s)
         s = 0
 
-    prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err" % (twoBitToFa, target.chrom, s, target.end+flank, twoBitToFaIndexDir, genome, outputDir), stdout = PIPE, shell=True)
+    prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err" % (TWOBITTOFA, target.chrom, s, target.end+flank, twoBitToFaIndexDir, genome, outputDir), stdout = PIPE, shell=True)
     output = prog.communicate()  
     
     if (prog.returncode != 0):
@@ -972,7 +920,7 @@ def get_primer_query_sequence_2bit(target, outputDir, flank, genome, twoBitToFaI
 
 
 def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, maxOffTargets):
-    command = "%s -v 0 --best --sam-nohead -k 10 %s/%s -f %s -S %s/primer_results.sam 2> %s/bowtie_primers.err" % (bowtie, bowtieIndexDir, genome, primerFastaFileName, outputDir, outputDir)
+    command = "%s -v 0 --best --sam-nohead -k 10 %s/%s -f %s -S %s/primer_results.sam 2> %s/bowtie_primers.err" % (BOWTIE, bowtieIndexDir, genome, primerFastaFileName, outputDir, outputDir)
     prog = Popen(command, shell=True)
     prog.wait()
 
@@ -1185,7 +1133,7 @@ PRIMER_EXPLAIN_FLAG=1
     f.write("=\n")
     f.close()
 
-    command = "%s < %s 2>> %s/primer3.error" % (primer3, primer3InputFile, outputDir)
+    command = "%s < %s 2>> %s/primer3.error" % (PRIMER3, primer3InputFile, outputDir)
     # sys.stderr.write("%s\n" % command)
     prog = Popen(command, stdout = PIPE, shell=True)
     output = prog.communicate()
@@ -1870,7 +1818,7 @@ def main():
         db = cdb.cursor()
         use_db = True
     else:
-        db = "%s/%s.gene_table" % (geneTableIndexDir, args.genome)
+        db = "%s/%s.gene_table" % (GENE_TABLE_INDEX_DIR, args.genome)
         use_db = False
 
     ## Create output directory if it doesn't exist
@@ -1882,7 +1830,7 @@ def main():
         sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
     else:
         targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons)
-        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, twoBitIndexDir, args.genome)
+        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome)
 
     ## Converts genomic coordinates to fasta file of all possible 16-mers
     if len(sequences) == 0:
@@ -1892,7 +1840,7 @@ def main():
        
 
     # Run bowtie and get results
-    bowtieResultsFile = runBowtie(args.uniqueMethod_Hsu, args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), bowtieIndexDir, args.genome, int(args.maxMismatches))
+    bowtieResultsFile = runBowtie(args.uniqueMethod_Hsu, args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), BOWTIE_INDEX_DIR, args.genome, int(args.maxMismatches))
     results = parseBowtie(bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM)  # TALENS: MAKE_PAIRS + CLUSTER
 
     
@@ -1917,9 +1865,9 @@ def main():
 
     if args.makePrimers:
         if args.fasta:
-            make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, bowtieIndexDir, fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
+            make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, BOWTIE_INDEX_DIR, fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
         else:
-            make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, bowtieIndexDir, twoBitIndexDir, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
+            make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, BOWTIE_INDEX_DIR, TWOBIT_INDEX_DIR, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
 
 
     ## Print results 
