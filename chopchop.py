@@ -41,7 +41,7 @@ CRISPR = 1
 TALENS = 2
 
 # Maximum genomic region that can be searched
-targetMax = 20000
+TARGET_MAX = 20000
 
 # Defaults
 CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
@@ -58,13 +58,13 @@ TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
                  "SCORE_FOLDING" : False}
 
 
-talenOffTargetMin = 28
-talenOffTargetMax = 42
-primerOffTargetMin = 1
-primerOffTargetMax = 1000
+TALEN_OFF_TARGET_MIN = 28
+TALEN_OFF_TARGET_MAX = 42
+PRIMER_OFF_TARGET_MIN = 1
+PRIMER_OFF_TARGET_MAX = 1000
 
 # Max members of a TALENs cluster (15)
-maxInCluster = 15
+MAX_IN_CLUSTER = 15
 
 # SCORES
 SCORE = {"INPAIR_OFFTARGET_0" : 5000,
@@ -80,8 +80,8 @@ SCORE = {"INPAIR_OFFTARGET_0" : 5000,
          "FOLDING" : 300}
 
 SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
-GClow = 40
-GChigh = 80
+GC_LOW = 40
+GC_HIGH = 80
 
 XU_2015 = {'C18':-0.113781378,
           'G17':0.080289971,
@@ -131,21 +131,21 @@ VIS_WIDTH = {"UTR" : 10,
 
 ## MISMATCHES, FIX TO ACCOMODATE OTHER PAMs
 
-defCount = [True] * 20
+DEF_COUNT = [True] * 20
 
-defAllowed = [True, True, True, True, True,
+DEF_ALLOWED = [True, True, True, True, True,
               True, True, True, True, True,
               True, True, True, True, True,
               True, True, True, True, True]
 
-congAllowed = [True, True, True, True, True,
+CONG_ALLOWED = [True, True, True, True, True,
                True, True, True, True, False,
                False, False, False, False, False,
                False, False, False, False, False]
 
 
 # SELF-COMPLEMENTARITY
-stemLen = 4
+STEM_LEN = 4
 
 #####################
 ##
@@ -294,14 +294,14 @@ class Guide:
             fwd = self.guideSeq[0:-3] # Do not include PAM motif in folding calculations
 
         rvs = str(Seq(fwd).reverse_complement())
-        L = len(fwd)-stemLen-1            
+        L = len(fwd)-STEM_LEN-1            
 
         self.folding = 0
         
-        for i in range(0,len(fwd)-stemLen):
-            if gccontent(fwd[i:i+stemLen]) >= 0.5:
-                if fwd[i:i+stemLen] in rvs[0:(L-i)] or any([fwd[i:i+stemLen] in item for item in backbone_regions]):
-                    sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+stemLen]))
+        for i in range(0,len(fwd)-STEM_LEN):
+            if gccontent(fwd[i:i+STEM_LEN]) >= 0.5:
+                if fwd[i:i+STEM_LEN] in rvs[0:(L-i)] or any([fwd[i:i+STEM_LEN] in item for item in backbone_regions]):
+                    sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+STEM_LEN]))
                     self.folding += 1
                     
         self.score += self.folding * SCORE['FOLDING']
@@ -315,7 +315,7 @@ class Guide:
 
         self.g20 = "-"
         if scoreGC:
-            if self.GCcontent > GChigh or self.GCcontent < GClow:
+            if self.GCcontent > GC_HIGH or self.GCcontent < GC_LOW:
                 self.score += SCORE['CRISPR_BAD_GC']
 
             if self.strandedGuideSeq[19] == "G":
@@ -1093,7 +1093,7 @@ def pairPrimers(primerAttributes, primerList, outputDir):
             lsq = Seq(att[(pairID, "LEFT", "SEQUENCE")])
             rsq = Seq(att[(pairID, "RIGHT", "SEQUENCE")])
 
-            offTargetPairs = has_Off_targets(pair[0], pair[1], primerOffTargetMin, primerOffTargetMax)
+            offTargetPairs = has_Off_targets(pair[0], pair[1], PRIMER_OFF_TARGET_MIN, PRIMER_OFF_TARGET_MIN)
             output.append([ pair[0].chrom, pair[0].start, pair[0].end, pair[1].start, pair[1].end, i, pair[0].strand, "%s" % lsq, "%s" % rsq, len(pair[0].offTargets), len(pair[1].offTargets), len(offTargetPairs), ltm, rtm, size ])
 
             i += 1
@@ -1321,7 +1321,7 @@ def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, 
                 #      sys.exit()
 
                 # Calculates off-target pairs for tale1 and tale2 (see below)
-                offTargetPairs = has_Off_targets(tale1, tale2, talenOffTargetMin, talenOffTargetMax)
+                offTargetPairs = has_Off_targets(tale1, tale2, TALEN_OFF_TARGET_MIN, TALEN_OFF_TARGET_MAX)
 
                 # Makes tale1 and tale2 into a Pair object, and adds to list of Pair objects
                 pairs.append(Pair(tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, g_RVD, minResSiteLen))
@@ -1368,7 +1368,7 @@ def clusterPairs(pairs):
         prev = pairs[i-1]
         
         # Specifically, compares location of spacer (by comparing location of tales) to see whether there is overlap, and therefore TALE pairs are redundant
-        if ((cur.spacerStart <= prev.spacerEnd) and (cur.spacerEnd >= prev.spacerStart) and inCluster < maxInCluster):
+        if ((cur.spacerStart <= prev.spacerEnd) and (cur.spacerEnd >= prev.spacerStart) and inCluster < PRIMER_OFF_TARGET_MIN):
 
             # Checks whether spacer overlap is >50%, in which case tale pairs are somewhat redundant, and should be part of the same cluster
             # if (cur.spacerEnd - prev.spacerStart+1) > (0.9*(cur.spacerSize+prev.spacerSize)):
@@ -1604,8 +1604,8 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
         # Pad since can bind outside exons
         targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1]-padSize, x[2]+padSize), coords))
 
-    if targetSize > targetMax:
-        sys.stderr.write("Search region is too large (%s nt). Maximum search region is %s nt.\n" % (targetSize, targetMax))
+    if targetSize > TARGET_MAX:
+        sys.stderr.write("Search region is too large (%s nt). Maximum search region is %s nt.\n" % (targetSize, TARGET_MAX))
         sys.exit(EXIT['GENE_ERROR'])
 
     return (targets, displayIndices, visCoords, target_strand)
@@ -1705,11 +1705,11 @@ def connect_db(database_string):
 
 
 def getMismatchVectors(pam, hsu, cong):
-    allowed = copy.copy(defAllowed)
-    count = copy.copy(defCount)
+    allowed = copy.copy(DEF_ALLOWED)
+    count = copy.copy(DEF_COUNT)
 
     if cong:
-        allowed = copy.copy(congAllowed)
+        allowed = copy.copy(CONG_ALLOWED)
 
     for char in pam:
         count.append(False)
