@@ -104,6 +104,9 @@ XU_2015 = {'C18':-0.113781378,
           '1C':0.179639101,
           '4T':-0.116646129}
 
+#number of nucleotides counted towards scoring after PAM, end before 5' gRNA start
+DOWNSTREAM_NUC = 6
+
 # EXIT CODES
 EXIT = {"PYTHON_ERROR" : 1,
         "BOWTIE_ERROR" : 2,
@@ -209,15 +212,23 @@ class Guide:
     """ This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
     "sort_offTargets" applies to just the Tale class """
 
-    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, replace5prime=None):        
+    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, PAM=None, replace5prime=None):        
         # From the guide's name we can get the chromosome
-        self.name = name
+        
         self.flagSum = flagSum
-
         elements = name.split(":")
         self.ID = elements[0]
         self.chrom = elements[1]
         coord = elements[2]
+        
+        self.name = ":".join(elements[0:3])
+        
+        if len(elements) > 3:
+            self.downstream5prim = elements[3]
+            self.downstream3prim = elements[4]
+        else:
+            self.downstream5prim = ''
+            self.downstream3prim = ''
 
         self.guideSize = guideSize
         self.targetSize = guideSize
@@ -270,7 +281,8 @@ class Guide:
             
         # Scoring
         self.calcGCContent(scoreGC)
-        self.Xu2015score = scoregRNA(self.strandedGuideSeq[:-3], self.strandedGuideSeq[-3:], '', XU_2015)
+        if PAM:
+            self.Xu2015score = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(PAM)], self.strandedGuideSeq[-len(PAM):], self.downstream3prim, XU_2015)
 
 
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, replace5prime=None):   
@@ -512,7 +524,7 @@ class Pair:
 def scoregRNA(seq, PAM, tail, lookup):
     """ Calculate score from model coefficients. score is 0-1, higher is better """
     score = 0
-    seq = seq[::-1]
+    seq = seq[::-1] #we calculate from PAM in a way: 321PAM123
     
     for i in range(len(seq)):
         key = seq[i] + str(i+1)
@@ -725,7 +737,7 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         finish = int(region[region.rfind('-')+1:])      
         start = max(start, 0)
 
-        # Run twoBitToFa program to get actual zebrafish dna sequence corresponding to input genomic coordinates
+        # Run twoBitToFa program to get actual dna sequence corresponding to input genomic coordinates
         # Popen runs twoBitToFa program. PIPE pipes stdout.
         prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (TWOBITTOFA, chrom, start, finish, indexDir, genome, outputDir), stdout = PIPE, shell=True)    
 
@@ -750,9 +762,22 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         # Add 1 due to BED 0-indexing
         name = "C:%s:%d-%d" % (chrom, start, finish)
 
-        # Loop over exon sequence, write every g-mer into file in which g-mer ends in GG in fasta format 
-        for num in range(0,len(dna)-(targetSize-1)):           
-            if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)], num, fastaFile):
+        # Loop over exon sequence, write every g-mer into file in which g-mer ends in PAM in fasta format 
+        for num in range(0,len(dna)-(targetSize-1)):
+            
+            if (num - DOWNSTREAM_NUC) > 0:
+                start5prim = num - DOWNSTREAM_NUC
+            else:
+                start5prim = 0
+                
+            if (num + targetSize + DOWNSTREAM_NUC) > len(dna):
+                end3prim = len(dna)
+            else:
+                end3prim = num + targetSize + DOWNSTREAM_NUC
+
+            downstream_5prim = dna[(start5prim):num] 
+            downstream_3prim = dna[(num + targetSize):end3prim]
+            if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)], num, fastaFile, downstream_5prim, downstream_3prim):
                 sequences[name] = dna
 
     fastaFile.close()
@@ -789,7 +814,7 @@ def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffT
     return bowtieResultsFile
 
 
-def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM):
+def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM):
     """ Parses bowtie hits and build list of guides"""
     
     currGuide = None
@@ -801,7 +826,7 @@ def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, score
         for line in reader:
             #  Encountered a new guide RNA (not a new hit for the same guide)
             if currGuide == None or line[0] != currGuide.name:
-                currGuide = Guide(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, replace5prime)
+                currGuide = Guide(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, PAM, replace5prime)
                 guideList.append(currGuide)
 
             # Adds hit to off-target list of current guide.
@@ -914,7 +939,7 @@ def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, max
         sys.stderr.write("Running bowtie on primers failed\n");
         sys.exit(EXIT['BOWTIE_PRIMER_ERROR']);
 
-    return parseBowtie("%s/primer_results.sam" % outputDir, False, [], [], False, False, None, None, maxOffTargets, None, None)
+    return parseBowtie("%s/primer_results.sam" % outputDir, False, [], [], False, False, None, None, maxOffTargets, None, None, None)
 
 
 def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
@@ -1201,19 +1226,19 @@ def findRestrictionSites(sequence, enzymeCompany, minSize=1):
 ##
 
 
-def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, allowed, PAM="NGG"):
+def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed, PAM="NGG"):
     """ Evaluates an k-mer as a potential CRISPR target site """
 
     gLen = guideSize-len(PAM)
     revCompPAM = str(Seq(PAM).reverse_complement())
-    dna = Seq(dna) 
+    dna = Seq(dna)
 
     if str(dna[0:2]) in allowed:
         add = True
         for pos in range(len(PAM)):
             if PAM[pos] == "N": continue
             
-            if PAM[pos] != dna[gLen+pos]:
+            if PAM[pos] != dna[gLen + pos]:
                 add = False
                 break
             
@@ -1222,7 +1247,7 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, allowed, PAM="NGG
         # rather than end of the sequence
         if add:
             dna = dna.reverse_complement()    
-            fastaFile.write('>%s_%d-%d\n%s\n' % (name, num, num+guideSize, dna))
+            fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
             return True
 
     if str(dna[-2:].reverse_complement()) in allowed:
@@ -1236,7 +1261,8 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, allowed, PAM="NGG
                 break
 
         if add:
-            fastaFile.write('>%s_%d-%d\n%s\n' % (name, num, num+guideSize, dna))
+            #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
+            fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
             return True
 
     return False
@@ -1370,8 +1396,9 @@ def clusterPairs(pairs):
     return (cluster, pairs)
 
 
-def eval_TALENS_sequence(name, targetSize, dna, num, fastaFile):
+def eval_TALENS_sequence(name, targetSize, dna, num, fastaFile, downstream5prim, downstream3prim):
     """ Evaluates an N-mer as a potential TALENs target site """
+    del downstream5prim, downstream3prim
     found = False
 
     # One TALE must start with a T and the other must end in an A, such that each on its respective strand begins with a T
@@ -1627,7 +1654,21 @@ def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc
 
     # Loop over sequence, write every k-mer into file in which k-mer ends in as PAM in fasta format 
     for num in range(0,len(sequence)-(targetSize-1)):
-        if evalAndPrintFunc(idName, targetSize, sequence[num:(num + targetSize)], num, candidateFastaFile):
+        
+        if (num - DOWNSTREAM_NUC) > 0:
+                start5prim = num - DOWNSTREAM_NUC
+        else:
+                start5prim = 0
+                
+        if (num + targetSize + DOWNSTREAM_NUC) > len(sequence):
+                end3prim = len(sequence)
+        else:
+                end3prim = num + targetSize + DOWNSTREAM_NUC
+
+        downstream_5prim = sequence[(start5prim):num] 
+        downstream_3prim = sequence[(num + targetSize):end3prim]
+        
+        if evalAndPrintFunc(idName, targetSize, sequence[num:(num + targetSize)], num, candidateFastaFile, downstream_5prim, downstream_3prim):
             sequences[idName] = sequence
 
     return (sequences, [name], [1], [[seq_name, 1, len(sequence), 0, 20, "+"]], sequence, "+")
@@ -1792,7 +1833,7 @@ def main():
     # Set default functions for different modes
     if args.MODE == CRISPR:
         allowed = getAllowedFivePrime(args.fivePrimeEnd)
-        evalSequence = lambda name, guideSize, dna, num, fastaFile: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, allowed=allowed, PAM=args.PAM)
+        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
         sortOutput = sort_CRISPR_guides            
     elif args.MODE == TALENS:
         evalSequence = eval_TALENS_sequence
@@ -1822,12 +1863,11 @@ def main():
     if len(sequences) == 0:
         sys.stderr.write("No target sites\n")
         sys.exit()
-
-       
+        
 
     # Run bowtie and get results
     bowtieResultsFile = runBowtie(args.uniqueMethod_Hsu, args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), BOWTIE_INDEX_DIR, args.genome, int(args.maxMismatches))
-    results = parseBowtie(bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM)  # TALENS: MAKE_PAIRS + CLUSTER
+    results = parseBowtie(bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM)  # TALENS: MAKE_PAIRS + CLUSTER
 
     
     if args.MODE == CRISPR:
