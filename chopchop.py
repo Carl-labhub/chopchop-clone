@@ -129,20 +129,6 @@ PRIMER3_CONFIG = {"PRIMER_OPT_SIZE" : "22",
 VIS_WIDTH = {"UTR" : 10,
              "CDS" : 20}
 
-## MISMATCHES, FIX TO ACCOMODATE OTHER PAMs
-
-DEF_COUNT = [True] * 20
-
-DEF_ALLOWED = [True, True, True, True, True,
-              True, True, True, True, True,
-              True, True, True, True, True,
-              True, True, True, True, True]
-
-CONG_ALLOWED = [True, True, True, True, True,
-               True, True, True, True, False,
-               False, False, False, False, False,
-               False, False, False, False, False]
-
 
 # SELF-COMPLEMENTARITY
 STEM_LEN = 4
@@ -1639,13 +1625,12 @@ def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc
     sequences = {}
     candidateFastaFile = open(candidateFastaFile, 'w')
 
-    # Loop over sequence, write every 23-mer into file in which 23-mer ends in GG in fasta format 
+    # Loop over sequence, write every k-mer into file in which k-mer ends in as PAM in fasta format 
     for num in range(0,len(sequence)-(targetSize-1)):
         if evalAndPrintFunc(idName, targetSize, sequence[num:(num + targetSize)], num, candidateFastaFile):
             sequences[idName] = sequence
 
     return (sequences, [name], [1], [[seq_name, 1, len(sequence), 0, 20, "+"]], sequence, "+")
-
 
 
 def hyphen_range(s):
@@ -1704,12 +1689,13 @@ def connect_db(database_string):
     return db
 
 
-def getMismatchVectors(pam, hsu, cong):
-    allowed = copy.copy(DEF_ALLOWED)
-    count = copy.copy(DEF_COUNT)
+def getMismatchVectors(pam, gLength, cong):
+    
+    allowed = [True] * (gLength -len(pam))
+    count = [True] * (gLength -len(pam))
 
     if cong:
-        allowed = copy.copy(CONG_ALLOWED)
+        allowed = [True] * 9 + [False] * (gLength -len(pam) -9)
 
     for char in pam:
         count.append(False)
@@ -1792,7 +1778,7 @@ def main():
             args.backbone = []
 
     # Set mismatch checking policy
-    (allowedMM, countMM) = getMismatchVectors(args.PAM, args.uniqueMethod_Hsu, args.uniqueMethod_Cong)
+    (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
 
     # Pad each exon equal to guidesize unless
     if args.padSize != -1:
