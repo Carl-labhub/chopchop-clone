@@ -39,12 +39,14 @@ GENE_TABLE_INDEX_DIR = "genomes"
 # Program mode
 CRISPR = 1
 TALENS = 2
+CPF1 = 3
 
 # Maximum genomic region that can be searched
 TARGET_MAX = 20000
 
 # Defaults
 CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
+                  "PAM": "NGG",
                   "MAX_OFFTARGETS" : 50,
                   "MAX_MISMATCHES" : 0,
                   "SCORE_GC" : True,
@@ -52,10 +54,18 @@ CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
 
 
 TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
+                 "PAM": "",
                  "MAX_OFFTARGETS" : 100,
                  "MAX_MISMATCHES" : 2,
                  "SCORE_GC" : False,
                  "SCORE_FOLDING" : False}
+
+CPF1_DEFAULT =  {"GUIDE_SIZE" : 20,
+                 "PAM": "TTN",
+                 "MAX_OFFTARGETS" : 50,
+                 "MAX_MISMATCHES" : 0,
+                 "SCORE_GC" : True,
+                 "SCORE_FOLDING" : True}
 
 
 TALEN_OFF_TARGET_MIN = 28
@@ -104,7 +114,7 @@ XU_2015 = {'C18':-0.113781378,
           '1C':0.179639101,
           '4T':-0.116646129}
 
-#number of nucleotides counted towards scoring after PAM, end before 5' gRNA start
+#number of nucleotides counted towards scoring after PAM, end before 5' gRNA start eg. 3: 321 gRNA PAM 123
 DOWNSTREAM_NUC = 6
 
 # EXIT CODES
@@ -125,7 +135,6 @@ PRIMER3_CONFIG = {"PRIMER_OPT_SIZE" : "22",
                   "PRIMER_MAX_NS_ACCEPTED" : "0",
                   "PRODUCT_SIZE_MIN" : "100",
                   "PRODUCT_SIZE_MAX" : "290"}
-
 
 
 # WIDTH
@@ -212,7 +221,7 @@ class Guide:
     """ This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
     "sort_offTargets" applies to just the Tale class """
 
-    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, PAM=None, replace5prime=None):        
+    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, PAM, replace5prime=None):        
         # From the guide's name we can get the chromosome
         
         self.flagSum = flagSum
@@ -410,7 +419,7 @@ class Guide:
 
         return ";".join(offTargets)
 
-        
+
 class Pair:
     """ Pair class for 2 TALEs that are the correct distance apart """
     def __init__(self, tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, g_RVD, minResSiteLen):
@@ -521,6 +530,7 @@ class Pair:
 ##
 ## Functions
 ##
+
 def scoregRNA(seq, PAM, tail, lookup):
     """ Calculate score from model coefficients. score is 0-1, higher is better """
     score = 0
@@ -1219,6 +1229,49 @@ def findRestrictionSites(sequence, enzymeCompany, minSize=1):
     analyze = Analysis(rb, mySeq)
     return analyze.with_sites()
 
+#####################
+##
+## CPF1 SPECIFIC FUNCTIONS
+##
+
+def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM="NGG"):
+    """ Evaluates an k-mer as a potential Cpf1 target site """
+
+    gLen = guideSize-len(PAM)
+    revCompPAM = str(Seq(PAM).reverse_complement())
+    dna = Seq(dna)
+
+    add = True
+    for pos in range(len(PAM)):
+        if PAM[pos] == "N": continue
+            
+        if PAM[pos] != dna[pos]:
+                add = False
+                break
+            
+    # in order to control the number of mismatches to search in the last 8 or 3 bps, 
+    # there is no need to reverse complement so the seed region
+    if add:
+        dna = dna.reverse_complement()
+        fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+        return True
+
+    add = True
+
+    for pos in range(len(PAM)):
+        if revCompPAM[pos]== "N": continue
+
+        if revCompPAM[pos] != dna[gLen + pos]:
+            add = False
+            break
+
+    if add:
+        #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
+        fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
+        return True
+
+    return False
+
 
 #####################
 ##
@@ -1747,6 +1800,20 @@ def getMismatchVectors(pam, gLength, cong):
 
     return allowed, count
 
+def getCpf1MismatchVectors(pam, gLength):
+    
+    allowed = [True] * (gLength -len(pam))
+    count = [True] * (gLength -len(pam))
+
+    for char in pam[::-1]:
+        count.insert(0, False)
+        if char == "N":
+            allowed.insert(0,True)
+        else:
+            allowed.insert(0,False)
+
+    return allowed, count
+
 def mode_select(var, index, MODE):
     """ Selects a default depending on mode for options that have not been set """
 
@@ -1758,6 +1825,9 @@ def mode_select(var, index, MODE):
 
     elif MODE == TALENS:
         return TALEN_DEFAULT[index]
+    
+    elif MODE == CPF1:
+        return CPF1_DEFAULT[index]
 
     sys.stderr.write("Unknown model %s\n" % MODE)
     sys.exit(EXIT['PYTHON_ERROR'])
@@ -1778,7 +1848,7 @@ def main():
     parser.add_argument("-BB", "--backbone", default=None, metavar="BACKBONE", help="Penalize self-complementarity versus backbone regions (comma-separated list, same strand as guide). Requires -C.")
     parser.add_argument("-R5", "--replace5P", default=None, metavar="REPLACE_5P", help="Replace bases from 5' end (with e.g. 'GG') ")  ## FIX: AT THE MOMENT THIS IS ONLY APPLIES TO FOLDING/SELF-COMPL
     parser.add_argument("-t", "--target", default="CODING", dest="targetRegion", help="Target the whole gene CODING/WHOLE/UTR5/UTR3/SPLICE. Default is CODING.")
-    parser.add_argument("-T", "--findTalens", dest="MODE", action="store_const", const=TALENS, default=CRISPR,  help="Find TALEN sites. Default is CRISPR.")
+    parser.add_argument("-T", "--MODE", default=1, type=int, choices=[1, 2, 3], help="Set mode (int): default is Cas9 = 1, Talen = 2, Cpf1 = 3")
     parser.add_argument("--taleMin", default=14, type=int, help="Minimum distance between TALENs. Default is 14.")  # 14 + 18(length of TALE) = 32
     parser.add_argument("--taleMax", default=20, type=int, help="Maximum distance between TALENs. Default is 20.")  # 20 + 18(length of TALE) = 38
     parser.add_argument("-f", "--fivePrimeEnd", default="NN", metavar="FIVE_PRIME_END", help="Specifies the requirement of the two nucleotides 5' end of the CRISPR guide: A/C/G/T/N. Default: NN.")
@@ -1786,7 +1856,7 @@ def main():
     parser.add_argument("-R", "--minResSiteLen", type=int, default=4, help="The minimum length of the restriction enzyme.")
     parser.add_argument("-v", "--maxMismatches", default=None, metavar="MAX_MISMATCHES", help="The number of mismatches to check across the sequence.")
     parser.add_argument("-m", "--maxOffTargets", default=50, metavar="MAX_HITS", help="The maximum number of off targets allowed.")
-    parser.add_argument("-M", "--PAM", default="NGG", metavar="PAM", help="The PAM motif.")
+    parser.add_argument("-M", "--PAM", type=str, help="The PAM motif.")
     parser.add_argument("-o", "--outputDir", default="./", metavar="OUTPUT_DIR", help="The output directory. Default is the current directory.")
     parser.add_argument("-F", "--fasta", default=False, action="store_true", help="Use FASTA file as input rather than gene or genomic region.")
     parser.add_argument("-p", "--padSize", default=-1, type=int, help="Extra bases searched outside the exon. Defaults to the size of the guide RNA for CRISPR and TALEN + maximum spacer for TALENS.")
@@ -1807,6 +1877,7 @@ def main():
     # Set mode specific parameters if not set by user
     args.scoreGC = mode_select(args.scoreGC, "SCORE_GC", args.MODE)
     args.scoreSelfComp = mode_select(args.noScoreSelfComp, "SCORE_FOLDING", args.MODE)
+    args.PAM = mode_select(args.PAM, "PAM", args.MODE)
     args.guideSize = mode_select(args.guideSize, "GUIDE_SIZE", args.MODE) + len(args.PAM)
     args.maxMismatches = mode_select(args.maxMismatches, "MAX_MISMATCHES", args.MODE)
     args.maxOffTargets = mode_select(args.maxOffTargets, "MAX_OFFTARGETS", args.MODE)
@@ -1818,24 +1889,29 @@ def main():
         else:
             args.backbone = []
 
-    # Set mismatch checking policy
-    (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
-
     # Pad each exon equal to guidesize unless
     if args.padSize != -1:
         padSize = args.padSize
     else:
         if args.MODE == TALENS:
             padSize = args.taleMax
-        elif args.MODE == CRISPR:
+        elif args.MODE == CRISPR or args.MODE == CPF1:
             padSize = args.guideSize
 
     # Set default functions for different modes
     if args.MODE == CRISPR:
+        # Set mismatch checking policy
+        (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
         allowed = getAllowedFivePrime(args.fivePrimeEnd)
         evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
-        sortOutput = sort_CRISPR_guides            
+        sortOutput = sort_CRISPR_guides       
+    elif args.MODE == CPF1:
+        (allowedMM, countMM) = getCpf1MismatchVectors(args.PAM, args.guideSize)
+        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM=args.PAM)
+        sortOutput = sort_CRISPR_guides  
     elif args.MODE == TALENS:
+        # Set mismatch checking policy
+        (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, None)
         evalSequence = eval_TALENS_sequence
         sortOutput = sort_TALEN_pairs
 
@@ -1870,7 +1946,7 @@ def main():
     results = parseBowtie(bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM)  # TALENS: MAKE_PAIRS + CLUSTER
 
     
-    if args.MODE == CRISPR:
+    if args.MODE == CRISPR or args.MODE == CPF1:
         cluster = 0
     elif args.MODE == TALENS:
         pairs = pairTalens(results, sequences, args.guideSize, int(args.taleMin), int(args.taleMax), args.enzymeCo, args.maxOffTargets, args.g_RVD, args.minResSiteLen)
@@ -1901,6 +1977,12 @@ def main():
 
     if args.MODE == CRISPR:
         print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tG20\tSelf-complementarity\tMM0\tMM1\tMM2\tXu2015"
+        for i in range(len(sortedOutput)):
+            print "%s\t%s" % (i+1, sortedOutput[i])            
+            resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
+            
+    elif args.MODE == CPF1:
+        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tG20\tSelf-complementarity\tMM0\tMM1\tMM2"
         for i in range(len(sortedOutput)):
             print "%s\t%s" % (i+1, sortedOutput[i])            
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
@@ -1951,7 +2033,7 @@ def main():
         for i in range(len(resultCoords)):
             el = []
 
-            if args.MODE == CRISPR:                
+            if args.MODE == CRISPR or args.MODE == CPF1:                
                 el.append(i+1)
                 el.extend(resultCoords[i])
             elif args.MODE == TALENS:
