@@ -217,13 +217,14 @@ class Hit:
         return "%s,%s,%s,%s" % (label, self.chrom + ":" + str(self.start), self.mismatch[-1], self.matchSeq)
 
 
-class Guide:
+class Guide(object):
     """ This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
     "sort_offTargets" applies to just the Tale class """
 
     def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, PAM, replace5prime=None):        
-        # From the guide's name we can get the chromosome
         
+        self.PAM = PAM
+        # From the guide's name we can get the chromosome
         self.flagSum = flagSum
         elements = name.split(":")
         self.ID = elements[0]
@@ -290,8 +291,6 @@ class Guide:
             
         # Scoring
         self.calcGCContent(scoreGC)
-        if PAM:
-            self.Xu2015score = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(PAM)], self.strandedGuideSeq[-len(PAM):], self.downstream3prim, XU_2015)
 
 
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, replace5prime=None):   
@@ -410,7 +409,7 @@ class Guide:
 
     def __str__(self):
         self.sort_offTargets()
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.g20, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.Xu2015score)
+        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.g20, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2])
                   
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -419,7 +418,17 @@ class Guide:
 
         return ";".join(offTargets)
 
-
+        
+class Cas9(Guide):
+    def __init__(self, *args, **kwargs):
+        super(Cas9, self).__init__(*args, **kwargs)
+        self.Xu2015score = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, XU_2015)
+    
+    def __str__(self):
+        self.sort_offTargets()
+        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.g20, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.Xu2015score)
+        
+        
 class Pair:
     """ Pair class for 2 TALEs that are the correct distance apart """
     def __init__(self, tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, g_RVD, minResSiteLen):
@@ -824,7 +833,7 @@ def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffT
     return bowtieResultsFile
 
 
-def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM):
+def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM):
     """ Parses bowtie hits and build list of guides"""
     
     currGuide = None
@@ -836,7 +845,7 @@ def parseBowtie(bowtieResultsFile, checkMismatch, displayIndices, targets, score
         for line in reader:
             #  Encountered a new guide RNA (not a new hit for the same guide)
             if currGuide == None or line[0] != currGuide.name:
-                currGuide = Guide(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, PAM, replace5prime)
+                currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, PAM, replace5prime)
                 guideList.append(currGuide)
 
             # Adds hit to off-target list of current guide.
@@ -949,7 +958,7 @@ def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, max
         sys.stderr.write("Running bowtie on primers failed\n");
         sys.exit(EXIT['BOWTIE_PRIMER_ERROR']);
 
-    return parseBowtie("%s/primer_results.sam" % outputDir, False, [], [], False, False, None, None, maxOffTargets, None, None, None)
+    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, [], [], False, False, None, None, maxOffTargets, None, None, None)
 
 
 def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
@@ -1904,14 +1913,17 @@ def main():
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
         allowed = getAllowedFivePrime(args.fivePrimeEnd)
         evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
+        guideClass = Cas9
         sortOutput = sort_CRISPR_guides       
     elif args.MODE == CPF1:
         (allowedMM, countMM) = getCpf1MismatchVectors(args.PAM, args.guideSize)
         evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM=args.PAM)
+        guideClass = Guide
         sortOutput = sort_CRISPR_guides  
     elif args.MODE == TALENS:
         # Set mismatch checking policy
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, None)
+        guideClass = Guide
         evalSequence = eval_TALENS_sequence
         sortOutput = sort_TALEN_pairs
 
@@ -1943,7 +1955,7 @@ def main():
 
     # Run bowtie and get results
     bowtieResultsFile = runBowtie(args.uniqueMethod_Hsu, args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), BOWTIE_INDEX_DIR, args.genome, int(args.maxMismatches))
-    results = parseBowtie(bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM)  # TALENS: MAKE_PAIRS + CLUSTER
+    results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM)  # TALENS: MAKE_PAIRS + CLUSTER
 
     
     if args.MODE == CRISPR or args.MODE == CPF1:
