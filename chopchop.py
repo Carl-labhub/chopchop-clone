@@ -1258,8 +1258,6 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
                 add = False
                 break
             
-    # in order to control the number of mismatches to search in the last 8 or 3 bps, 
-    # there is no need to reverse complement so the seed region
     if add:
         dna = dna.reverse_complement()
         fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
