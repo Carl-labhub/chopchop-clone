@@ -844,7 +844,9 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
 
         for line in reader:
             #  Encountered a new guide RNA (not a new hit for the same guide)
-            if currGuide == None or line[0] != currGuide.name:
+            elements = line[0].split(":") #removes from name 5' and 3' tails
+            name = ":".join(elements[0:3])
+            if currGuide == None or name != currGuide.name:
                 currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, PAM, replace5prime)
                 guideList.append(currGuide)
 
