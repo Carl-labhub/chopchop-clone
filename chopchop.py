@@ -64,8 +64,8 @@ CPF1_DEFAULT =  {"GUIDE_SIZE" : 20,
                  "PAM": "TTN",
                  "MAX_OFFTARGETS" : 50,
                  "MAX_MISMATCHES" : 0,
-                 "SCORE_GC" : True,
-                 "SCORE_FOLDING" : True}
+                 "SCORE_GC" : False,
+                 "SCORE_FOLDING" : False}
 
 
 TALEN_OFF_TARGET_MIN = 28
@@ -324,11 +324,14 @@ class Guide(object):
             if self.GCcontent > GC_HIGH or self.GCcontent < GC_LOW:
                 self.score += SCORE['CRISPR_BAD_GC']
 
-            if self.strandedGuideSeq[19] == "G":
-                self.g20 = "Y"
+            if len(self.strandedGuideSeq) >= 19:
+                if self.strandedGuideSeq[19] == "G":
+                    self.g20 = "Y"
+                else:
+                    self.g20 = "N"
+                    self.score += SCORE['CRISPR_NO_G20']
             else:
-                self.g20 = "N"
-                self.score += SCORE['CRISPR_NO_G20']
+                self.g20 = "N/A"
 
 
     def addOffTarget(self, hit, checkMismatch, maxOffTargets, allowedMMPos, countMMPos):        
@@ -2071,7 +2074,7 @@ def main():
         json.dump(cutcoords, cutCoord_file)
 
         info = open("%s/run.info" % args.outputDir, 'w')
-        info.write("%s\t%s\t%s\t%s\t%s\n" % ("".join(args.targets), args.genome, args.MODE, args.uniqueMethod_Hsu, args.uniqueMethod_Cong))
+        info.write("%s\t%s\t%s\t%s\t%s\t%s\n" % ("".join(args.targets), args.genome, args.MODE, args.uniqueMethod_Hsu, args.uniqueMethod_Cong, args.guideSize))
         info.close()
 
 if __name__ == '__main__':
