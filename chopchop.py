@@ -17,8 +17,9 @@ import argparse
 from Bio import SeqIO, SeqFeature, SeqRecord
 from Bio.Restriction import Analysis, RestrictionBatch
 from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 from Bio.Alphabet.IUPAC import IUPACAmbiguousDNA
-from Bio.SeqFeature import FeatureLocation
+from Bio.SeqFeature import SeqFeature, FeatureLocation
 from operator import itemgetter, attrgetter
 from subprocess import Popen, PIPE
 
@@ -236,10 +237,12 @@ class Guide(object):
         if len(elements) > 3:
             self.downstream5prim = elements[3]
             self.downstream3prim = elements[4]
+            self.strand = elements[5]
         else:
             self.downstream5prim = ''
             self.downstream3prim = ''
-
+            self.strand = None
+            
         self.guideSize = guideSize
         self.targetSize = guideSize
         self.cluster = -1
@@ -273,11 +276,13 @@ class Guide(object):
 
         # Record which strand the guide is on
         if flagSum == "16":
-            self.strand = "+"
             self.strandedGuideSeq = guideSeq
+            if self.strand is None:
+                self.strand = '+'
         else:
             self.strandedGuideSeq = str(Seq(guideSeq).reverse_complement())
-            self.strand = "-"            
+            if self.strand is None:
+                self.strand = '-'
 
         # Initiate offTargets list
         self.offTargets = []
@@ -1265,7 +1270,7 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
             
     if add:
         dna = dna.reverse_complement()
-        fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+        fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
         return True
 
     add = True
@@ -1279,7 +1284,7 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
 
     if add:
         #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
-        fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
+        fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
         return True
 
     return False
@@ -1312,7 +1317,7 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
         # rather than end of the sequence
         if add:
             dna = dna.reverse_complement()    
-            fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+            fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
             return True
 
     if str(dna[-2:].reverse_complement()) in allowed:
@@ -1327,7 +1332,7 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
 
         if add:
             #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
-            fastaFile.write('>%s_%d-%d:%s:%s\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
+            fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
             return True
 
     return False
@@ -1703,7 +1708,7 @@ def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc
     fastaFile.close()
 
     
-    name = "%s:1-%s" % (seq_name, len(sequence))
+    name = "%s:0-%s" % (seq_name, len(sequence))
     idName = "C:" + name 
     sequence = sequence.upper()
     sequence = "".join(sequence.split())
