@@ -66,7 +66,7 @@ CPF1_DEFAULT =  {"GUIDE_SIZE" : 20,
                  "MAX_OFFTARGETS" : 50,
                  "MAX_MISMATCHES" : 2,
                  "SCORE_GC" : False,
-                 "SCORE_FOLDING" : False}
+                 "SCORE_FOLDING" : True}
 
 
 TALEN_OFF_TARGET_MIN = 28
@@ -92,7 +92,7 @@ SCORE = {"INPAIR_OFFTARGET_0" : 5000,
 
 SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
 GC_LOW = 40
-GC_HIGH = 80
+GC_HIGH = 70
 
 XU_2015 = {'C18':-0.113781378,
           'G17':0.080289971,
@@ -290,7 +290,7 @@ class Guide(object):
         self.offTargets_sorted = False
 
         if scoreSelfComp:
-            self.calcSelfComplementarity(scoreSelfComp, backbone_regions, replace5prime)
+            self.calcSelfComplementarity(scoreSelfComp, backbone_regions, PAM, replace5prime)
         else:
             self.folding ="N/A"
             
@@ -298,11 +298,11 @@ class Guide(object):
         self.calcGCContent(scoreGC)
 
 
-    def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, replace5prime=None):   
+    def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):   
         if replace5prime:
-            fwd = replace5prime+ self.strandedGuideSeq[len(replace5prime):-3] # Replace the 2 first bases with e.g. "GG"
+            fwd = self.strandedGuideSeq[len(PAM):-len(replace5prime)] + replace5prime #Replace the 2 first bases with e.g. "GG"
         else:
-            fwd = self.guideSeq[0:-3] # Do not include PAM motif in folding calculations
+            fwd = self.guideSeq[len(PAM):] # Do not include PAM motif in folding calculations
 
         rvs = str(Seq(fwd).reverse_complement())
         L = len(fwd)-STEM_LEN-1            
@@ -321,7 +321,7 @@ class Guide(object):
     def calcGCContent(self, scoreGC):
         """ Calculate the GC content of the guide """
         Gcount = self.guideSeq.count('G')
-        Ccount = self.guideSeq.count('C')        
+        Ccount = self.guideSeq.count('C')
         self.GCcontent = (100*(float(Gcount+Ccount)/int(self.guideSize)))
 
         self.g20 = "-"
@@ -431,7 +431,25 @@ class Cas9(Guide):
     def __str__(self):
         self.sort_offTargets()
         return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.Xu2015score)
+    
+    def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):
+        if replace5prime:
+            fwd = replace5prime + self.strandedGuideSeq[len(replace5prime):-len(PAM)] # Replace the 2 first bases with e.g. "GG"
+        else:
+            fwd = self.guideSeq[0:-len(PAM)] # Do not include PAM motif in folding calculations
+
+        rvs = str(Seq(fwd).reverse_complement())
+        L = len(fwd)-STEM_LEN-1            
+
+        self.folding = 0
         
+        for i in range(0,len(fwd)-STEM_LEN):
+            if gccontent(fwd[i:i+STEM_LEN]) >= 0.5:
+                if fwd[i:i+STEM_LEN] in rvs[0:(L-i)] or any([fwd[i:i+STEM_LEN] in item for item in backbone_regions]):
+                    sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+STEM_LEN]))
+                    self.folding += 1
+                    
+        self.score += self.folding * SCORE['FOLDING']
         
 class Pair:
     """ Pair class for 2 TALEs that are the correct distance apart """
@@ -828,7 +846,7 @@ def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffT
 
     sys.stderr.write("%s\n" % command)
     prog = Popen(command, shell=True)
-    prog.wait()
+    prog.wait() 
 
     if (prog.returncode != 0):
         sys.stderr.write("Running bowtie failed\n");
@@ -1249,39 +1267,41 @@ def findRestrictionSites(sequence, enzymeCompany, minSize=1):
 ## CPF1 SPECIFIC FUNCTIONS
 ##
 
-def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM="NGG"):
+def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed, PAM):
     """ Evaluates an k-mer as a potential Cpf1 target site """
 
     gLen = guideSize-len(PAM)
     revCompPAM = str(Seq(PAM).reverse_complement())
     dna = Seq(dna)
-
-    add = True
-    for pos in range(len(PAM)):
-        if PAM[pos] == "N": continue
-            
-        if PAM[pos] != dna[pos]:
+    
+    if str(dna[-2:]) in allowed:
+        add = True
+        for pos in range(len(PAM)):
+            if PAM[pos] == "N": continue
+                
+            if PAM[pos] != dna[pos]:
+                    add = False
+                    break
+                
+        if add:
+            dna = dna.reverse_complement()
+            fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+            return True
+    
+    if str(dna[0:2].reverse_complement()) in allowed:
+        add = True
+    
+        for pos in range(len(PAM)):
+            if revCompPAM[pos] == "N": continue
+    
+            if revCompPAM[pos] != dna[gLen + pos]:
                 add = False
                 break
-            
-    if add:
-        dna = dna.reverse_complement()
-        fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
-        return True
-
-    add = True
-
-    for pos in range(len(PAM)):
-        if revCompPAM[pos]== "N": continue
-
-        if revCompPAM[pos] != dna[gLen + pos]:
-            add = False
-            break
-
-    if add:
-        #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
-        fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
-        return True
+    
+        if add:
+            #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
+            fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
+            return True
 
     return False
 
@@ -1292,7 +1312,7 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
 ##
 
 
-def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed, PAM="NGG"):
+def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed, PAM):
     """ Evaluates an k-mer as a potential CRISPR target site """
 
     gLen = guideSize-len(PAM)
@@ -1918,12 +1938,13 @@ def main():
         allowed = getAllowedFivePrime(args.fivePrimeEnd)
         evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
         guideClass = Cas9
-        sortOutput = sort_CRISPR_guides       
+        sortOutput = sort_CRISPR_guides
     elif args.MODE == CPF1:
         (allowedMM, countMM) = getCpf1MismatchVectors(args.PAM, args.guideSize)
-        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM=args.PAM)
+        allowed = getAllowedFivePrime(args.fivePrimeEnd)
+        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
         guideClass = Guide
-        sortOutput = sort_CRISPR_guides  
+        sortOutput = sort_CRISPR_guides
     elif args.MODE == TALENS:
         # Set mismatch checking policy
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, None)
@@ -1968,7 +1989,7 @@ def main():
         pairs = pairTalens(results, sequences, args.guideSize, int(args.taleMin), int(args.taleMax), args.enzymeCo, args.maxOffTargets, args.g_RVD, args.minResSiteLen)
 
         if (not len(pairs)):
-            sys.stderr.write("No TALEN pairs could be generated for this region.\n")            
+            sys.stderr.write("No TALEN pairs could be generated for this region.\n")
             sys.exit(EXIT['GENE_ERROR'])
         cluster, results = clusterPairs(pairs)
 
