@@ -49,7 +49,7 @@ TARGET_MAX = 20000
 CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
                   "PAM": "NGG",
                   "MAX_OFFTARGETS" : 50,
-                  "MAX_MISMATCHES" : 0,
+                  "MAX_MISMATCHES" : 2,
                   "SCORE_GC" : True,
                   "SCORE_FOLDING" : True}
 
@@ -64,7 +64,7 @@ TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
 CPF1_DEFAULT =  {"GUIDE_SIZE" : 20,
                  "PAM": "TTN",
                  "MAX_OFFTARGETS" : 50,
-                 "MAX_MISMATCHES" : 0,
+                 "MAX_MISMATCHES" : 2,
                  "SCORE_GC" : False,
                  "SCORE_FOLDING" : False}
 
@@ -339,7 +339,7 @@ class Guide(object):
                 self.g20 = "N/A"
 
 
-    def addOffTarget(self, hit, checkMismatch, maxOffTargets, allowedMMPos, countMMPos):        
+    def addOffTarget(self, hit, checkMismatch, maxOffTargets, countMMPos):        
         """ Add off target hits (and not original hit) to list for each guide RNA """    
 
         hit_id = "%s:%s" % (hit.chrom, hit.start)
@@ -356,24 +356,20 @@ class Guide(object):
         if self.offTarget_hash.has_key(hit_id):  
             return
 
-        if hit.start == 13080466:
-            sys.stderr.write("ALL0 [%s]\n" % allowedMMPos)
-
         # Reverse  count+allowed arrays if on the reverse strand
         # if checkMismatch and hit.flagSum != self.flagSum:
         if checkMismatch and hit.flagSum == 0:
             countMMPos = countMMPos[::-1]
-            allowedMMPos = allowedMMPos[::-1]
 
         if hit.start == 13080466:
-            sys.stderr.write("ALL  [%s]\n" % allowedMMPos)
+            sys.stderr.write("ALL  [%s]\n" % countMMPos)
 
         self.offTarget_hash[hit_id] = hit
         if checkMismatch:            
             MMs = get_mismatch_pos(hit.mismatchPos[5:])
 
             for mm in MMs:
-                if not allowedMMPos[mm]:
+                if not countMMPos[mm]:
                     del(self.offTarget_hash[hit_id])
                     return
 
@@ -859,7 +855,7 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
                 guideList.append(currGuide)
 
             # Adds hit to off-target list of current guide.
-            currGuide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, allowMM, countMM)
+            currGuide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, countMM)
         
    
     for guideNum in range(0, len(guideList)):
