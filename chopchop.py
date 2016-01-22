@@ -65,7 +65,7 @@ CPF1_DEFAULT =  {"GUIDE_SIZE" : 20,
                  "PAM": "TTN",
                  "MAX_OFFTARGETS" : 50,
                  "MAX_MISMATCHES" : 2,
-                 "SCORE_GC" : False,
+                 "SCORE_GC" : True,
                  "SCORE_FOLDING" : True}
 
 
@@ -84,10 +84,8 @@ SCORE = {"INPAIR_OFFTARGET_0" : 5000,
          "OFFTARGET_PAIR_SAME_STRAND" : 10000,
          "OFFTARGET_PAIR_DIFF_STRAND" : 5000,
          "MAX_OFFTARGETS" : 4000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
-         "CRISPR_NO_G20" : 20,
-         "CRISPR_NO_G19" : 5,
-         "CRISPR_NO_C18" : 5,
          "CRISPR_BAD_GC" : 500,
+         "XU_2015" : 100,
          "FOLDING" : 300}
 
 SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
@@ -324,19 +322,9 @@ class Guide(object):
         Ccount = self.guideSeq.count('C')
         self.GCcontent = (100*(float(Gcount+Ccount)/int(self.guideSize)))
 
-        self.g20 = "-"
         if scoreGC:
             if self.GCcontent > GC_HIGH or self.GCcontent < GC_LOW:
                 self.score += SCORE['CRISPR_BAD_GC']
-
-            if len(self.strandedGuideSeq) >= 19:
-                if self.strandedGuideSeq[19] == "G":
-                    self.g20 = "Y"
-                else:
-                    self.g20 = "N"
-                    self.score += SCORE['CRISPR_NO_G20']
-            else:
-                self.g20 = "N/A"
 
 
     def addOffTarget(self, hit, checkMismatch, maxOffTargets, countMMPos):        
@@ -427,10 +415,11 @@ class Cas9(Guide):
     def __init__(self, *args, **kwargs):
         super(Cas9, self).__init__(*args, **kwargs)
         self.Xu2015score = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, XU_2015)
+        self.score = self.score - self.Xu2015score * SCORE['XU_2015']
     
     def __str__(self):
         self.sort_offTargets()
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.Xu2015score)
+        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.Xu2015score)
     
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):
         if replace5prime:
