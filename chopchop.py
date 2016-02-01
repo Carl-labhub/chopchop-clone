@@ -84,8 +84,8 @@ SCORE = {"INPAIR_OFFTARGET_0" : 5000,
          "OFFTARGET_PAIR_SAME_STRAND" : 10000,
          "OFFTARGET_PAIR_DIFF_STRAND" : 5000,
          "MAX_OFFTARGETS" : 4000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
-         "CRISPR_BAD_GC" : 500,
          "XU_2015" : 100,
+         "CRISPR_BAD_GC" : 500,
          "FOLDING" : 300}
 
 SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
@@ -397,7 +397,6 @@ class Guide(object):
         self.offTargets = sorted(self.offTargets, key=attrgetter('chrom', 'start'))  
         self.offTargets_sorted = True
 
-          
 
     def __str__(self):
         self.sort_offTargets()
@@ -416,7 +415,7 @@ class Cas9(Guide):
         super(Cas9, self).__init__(*args, **kwargs)
         self.Xu2015score = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, XU_2015)
         self.score = self.score - self.Xu2015score * SCORE['XU_2015']
-    
+
     def __str__(self):
         self.sort_offTargets()
         return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.Xu2015score)
@@ -439,6 +438,7 @@ class Cas9(Guide):
                     self.folding += 1
                     
         self.score += self.folding * SCORE['FOLDING']
+        
         
 class Pair:
     """ Pair class for 2 TALEs that are the correct distance apart """
@@ -1251,46 +1251,85 @@ def findRestrictionSites(sequence, enzymeCompany, minSize=1):
     analyze = Analysis(rb, mySeq)
     return analyze.with_sites()
 
+
+def comaprePAM(basePAM, baseDNA):
+    if basePAM == "N":
+        return True
+
+    if basePAM == baseDNA:
+        return True
+
+    if basePAM == "W" and (baseDNA == "A" or baseDNA == "T"):
+        return True
+
+    if basePAM == "S" and (baseDNA == "C" or baseDNA == "G"):
+        return True
+
+    if basePAM == "M" and (baseDNA == "A" or baseDNA == "C"):
+        return True
+
+    if basePAM == "K" and (baseDNA == "G" or baseDNA == "T"):
+        return True
+
+    if basePAM == "R" and (baseDNA == "A" or baseDNA == "G"):
+        return True
+
+    if basePAM == "Y" and (baseDNA == "C" or baseDNA == "T"):
+        return True
+
+    if basePAM == "B" and baseDNA != "A":
+        return True
+
+    if basePAM == "D" and baseDNA != "C":
+        return True
+
+    if basePAM == "H" and baseDNA != "G":
+        return True
+
+    if basePAM == "V" and baseDNA != "T":
+        return True
+
+    return False
+
 #####################
 ##
 ## CPF1 SPECIFIC FUNCTIONS
 ##
 
-def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed, PAM):
+
+def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM):
     """ Evaluates an k-mer as a potential Cpf1 target site """
 
     gLen = guideSize-len(PAM)
     revCompPAM = str(Seq(PAM).reverse_complement())
     dna = Seq(dna)
     
-    if str(dna[-2:]) in allowed:
-        add = True
-        for pos in range(len(PAM)):
-            if PAM[pos] == "N": continue
+    add = True
+    for pos in range(len(PAM)):
+        if comaprePAM(PAM[pos], dna[pos]):
+            continue 
+        else:
+            add = False
+            break
                 
-            if PAM[pos] != dna[pos]:
-                    add = False
-                    break
-                
-        if add:
-            dna = dna.reverse_complement()
-            fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
-            return True
+    if add:
+        dna = dna.reverse_complement()
+        fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+        return True
     
-    if str(dna[0:2].reverse_complement()) in allowed:
-        add = True
+    add = True
     
-        for pos in range(len(PAM)):
-            if revCompPAM[pos] == "N": continue
+    for pos in range(len(PAM)):
+        if comaprePAM(revCompPAM[pos], dna[gLen + pos]):
+            continue 
+        else:
+            add = False
+            break
     
-            if revCompPAM[pos] != dna[gLen + pos]:
-                add = False
-                break
-    
-        if add:
-            #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
-            fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
-            return True
+    if add:
+        #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
+        fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
+        return True
 
     return False
 
@@ -1311,9 +1350,9 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
     if str(dna[0:2]) in allowed:
         add = True
         for pos in range(len(PAM)):
-            if PAM[pos] == "N": continue
-            
-            if PAM[pos] != dna[gLen + pos]:
+            if comaprePAM(PAM[pos], dna[gLen + pos]):
+                continue 
+            else:
                 add = False
                 break
             
@@ -1329,9 +1368,9 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
         add = True
 
         for pos in range(len(PAM)):
-            if revCompPAM[pos]== "N": continue
-
-            if revCompPAM[pos] != dna[pos]:
+            if comaprePAM(revCompPAM[pos], dna[pos]):
+                continue 
+            else:
                 add = False
                 break
 
@@ -1930,8 +1969,7 @@ def main():
         sortOutput = sort_CRISPR_guides
     elif args.MODE == CPF1:
         (allowedMM, countMM) = getCpf1MismatchVectors(args.PAM, args.guideSize)
-        allowed = getAllowedFivePrime(args.fivePrimeEnd)
-        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
+        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM=args.PAM)
         guideClass = Guide
         sortOutput = sort_CRISPR_guides
     elif args.MODE == TALENS:
