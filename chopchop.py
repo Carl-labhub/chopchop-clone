@@ -41,6 +41,7 @@ GENE_TABLE_INDEX_DIR = "genomes"
 CRISPR = 1
 TALENS = 2
 CPF1 = 3
+NICKASE = 4
 
 # Maximum genomic region that can be searched
 TARGET_MAX = 20000
@@ -67,6 +68,13 @@ CPF1_DEFAULT =  {"GUIDE_SIZE" : 20,
                  "MAX_MISMATCHES" : 2,
                  "SCORE_GC" : True,
                  "SCORE_FOLDING" : True}
+
+NICKASE_DEFAULT =  {"GUIDE_SIZE" : 20,
+                    "PAM": "NGG",
+                    "MAX_OFFTARGETS" : 50,
+                    "MAX_MISMATCHES" : 2,
+                    "SCORE_GC" : True,
+                    "SCORE_FOLDING" : True}
 
 
 TALEN_OFF_TARGET_MIN = 28
@@ -546,6 +554,83 @@ class Pair:
         return "\n".join([pairs, self.tale1.asOffTargetString("TALE 1", maxOffTargets), self.tale2.asOffTargetString("TALE 2", maxOffTargets)])
 
 
+class Nickase:
+    """ Pair class for 2 Cas9 that are the correct distance apart """
+    def __init__(self, tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, minResSiteLen):
+        self.tale1 = tale1
+        self.tale2 = tale2
+        self.chrom = tale1.chrom 
+        self.strand = tale1.strand
+        self.ID = ""
+        self.restrictionSites = ""
+
+        # Start of region covered by tale pair
+        self.start = tale1.start
+
+        # End of region covered by tale pair
+        self.end = tale2.end
+        self.spacerSeq = spacerSeq
+        self.targetSize = spacerSize
+        self.spacerSize = spacerSize
+        self.offTargetPairs = offTargetPairs
+        self.diffStrandOffTarget = 0
+        self.sameStrandOffTarget = 0        
+
+
+        # Start cluster as -1, but will increment from 1
+        self.cluster = -1
+        self.spacerStart = tale1.start + tale1.guideSize
+        self.spacerEnd = tale2.start - 1
+
+        self.enzymeCo = enzymeCo
+        self.strandedGuideSeq = str(self.tale1.guideSeq) + "\n" + self.spacerSeq + "\n" + str(self.tale2.guideSeq)
+        self.offTargetPairCount = 0
+
+        # Use bitwise operator to compare flag sum to see whether off-target TALEs are on different strands (bad = good cutting ability)
+        # or on the same strand (not so bad = FokI domains probably too far apart to cut)
+        indivScore = 0
+
+        for (hit1,hit2) in offTargetPairs:
+            # Using boolean, count number of offtarget pairs on different strands
+            if hit2.flagSum & hit1.flagSum == 0:
+                self.diffStrandOffTarget += 1                
+                
+            for opt in [hit1.opts, hit2.opts]:
+                if opt == "NM:i:0":
+                    indivScore += SINGLE_OFFTARGET_SCORE[0]
+                elif opt == "NM:i:1":
+                    indivScore += SINGLE_OFFTARGET_SCORE[1]
+                if opt == "NM:i:2":
+                    indivScore += SINGLE_OFFTARGET_SCORE[2]
+
+           
+        # Compute penalties (scores) for off-target hits. Worst = off-target pair, Not so bad = off-target single tale
+        self.score = (self.diffStrandOffTarget * SCORE['OFFTARGET_PAIR_DIFF_STRAND']) + tale1.score + tale2.score - indivScore
+        resSites = findRestrictionSites(self.spacerSeq, enzymeCo, minResSiteLen)  
+        self.restrictionSites = ";".join(map(lambda x: "%s:%s" % (str(x), ",".join(map(str, resSites[x]))), resSites))
+    
+
+    def __str__(self):
+        # This creates a tab delimited list of output, with the final column as a semicolon-separated list of REs that cut in the spacer        
+        sequence = str(self.tale1.guideSeq) + "*" + self.spacerSeq + "*" + str(self.tale2.guideSeq)
+
+        return "%s\t%s:%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (sequence, self.chrom, self.start, self.tale1.exonNum, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], self.restrictionSites)
+
+
+    def asOffTargetString(self, label, maxOffTargets):
+        pairs = []
+
+        # Add any off-target pairs
+        if self.offTargetPairs:
+            for offTargetPair in self.offTargetPairs:
+                pairs.append("%s,%s" % (offTargetPair[0].asOffTargetString(label, maxOffTargets), offTargetPair[1].asOffTargetString(label, maxOffTargets)))
+        else:
+            pairs.append("")
+
+        pairs = ";".join(pairs)
+
+        return "\n".join([pairs, self.tale1.asOffTargetString("TALE 1", maxOffTargets), self.tale2.asOffTargetString("TALE 2", maxOffTargets)])
+
 #####################
 ##
 ## Functions
@@ -610,6 +695,7 @@ def get_mismatch_pos(mismatchString):
 
     return mismatches
 
+
 def truncateToUTR5(cdsStart, exons, indices):
     """ Truncates the gene to only target 5' UTR """
 
@@ -623,6 +709,23 @@ def truncateToUTR5(cdsStart, exons, indices):
         
     return (exons[:(endExon+1)], indices[:(endExon+1)])
 
+
+def truncateToPROMOTER(strand, exons, indices):
+    """ Truncates the gene to only target promoter +-200bp TSS """
+    
+    if (strand == "+"):
+        firstExon = exons[0]
+        firstExon[1] = firstExon[1] - 200
+        firstExon[2] = firstExon[1] + 200
+        return ([firstExon], [indices[0]])
+    else:
+        firstExon = exons[-1]
+        firstExon[1] = firstExon[1] - 200
+        firstExon[2] = firstExon[1] + 200
+        return ([firstExon], [indices[-1]])
+    
+    return (exons, indices)
+    
 
 def truncateToUTR3(cdsEnd, exons, indices):
     """ Truncates the gene to only target 3' UTR """
@@ -876,7 +979,6 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
                 guideList[guideNum].exonNum = displayIndices[target]
         
     return guideList
-
 
 
 def parse_primer3_output(target, region, primer3output, primerFastaFile):
@@ -1210,7 +1312,7 @@ def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, m
         f = fileHandler[current.ID]
 
         # Add the current TALE pair to the appropriate list in the list of lists, depending on its cluster number            
-        if mode == TALENS:
+        if mode == TALENS or mode == NICKASE:
             clusterID = current.cluster
             clusters[clusterID-1].append(current)             
             
@@ -1455,6 +1557,57 @@ def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, 
     return pairs
 
 
+def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, enzymeCo, maxOffTargets, minResSiteLen, offtargetMaxDist):
+    pairs = []
+
+    for i in range(len(taleList)-1):
+        tale1 = taleList[i]
+
+        # FIX: Only start looking for pair when > 30 - 36 spacer+length of i-TALE (modified for 17-mers and 18-mers)
+        for j in range(i+1, len(taleList)-1):
+            tale2 = taleList[j]
+
+            if tale1.start + taleMaxDistance < tale2.start:
+                continue 
+
+            elif tale1.start + taleMinDistance < tale2.start and tale1.strand != tale2.strand:
+
+                # EDV: Are all these find calls faster than a regular expression?
+                pos = tale1.name.find('_')
+                exon1 = tale1.name[:pos]
+                exonSeq = fastaSeq[exon1]
+
+                # Make sure the two TALENs are on the same "slice", only a problem for overlapping padding regions
+                pos2 = tale2.name.find('_')
+                exon2 = tale2.name[:pos2]
+                if exon1 != exon2:
+                    continue
+
+                # The coordinates of the tale within the exon e.g. 128-143
+                tale1coords = tale1.name[pos+1:]
+
+                # Just the second coordinate, corresponding to the end of the first tale e.g. 143
+                tale1End = int(tale1coords[tale1coords.find('-')+1:])
+
+                # The coordinates of the tale within the exon e.g. 160-175
+                tale2coords = tale2.name[tale2.name.find('_')+1:]                            
+
+                # Just the first coordinate, corresponding to the beginning of the second tale e.g. 160
+                tale2Start = int(tale2coords[:tale2coords.find('-')])
+
+                # sequence of spacer between end of tale1 and beginning of tale2
+                spacerSeq = exonSeq[tale1End:tale2Start]
+
+                spacerSize = len(spacerSeq)                         
+
+                # Calculates off-target pairs for tale1 and tale2 (see below)
+                offTargetPairs = has_Off_targets(tale1, tale2, taleMinDistance-guideSize, offtargetMaxDist)
+
+                # Makes tale1 and tale2 into a Pair object, and adds to list of Pair objects
+                pairs.append(Nickase(tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, minResSiteLen))
+
+    return pairs
+
 
 def has_Off_targets(tale1, tale2, offTargetMin, offTargetMax):
     """ Returns the number of off-targets for a pair of TALENs (10-24bp apart) """
@@ -1462,7 +1615,7 @@ def has_Off_targets(tale1, tale2, offTargetMin, offTargetMax):
     offTargetPairs = []  
 
     # Calls sort function to sort off-targets by chromosome and chromosome position. Bowtie ranks them according to quality of hit
-    tale1.sort_offTargets()    
+    tale1.sort_offTargets()
     tale2.sort_offTargets()
   
     ### FIX: Eivind to write this code properly. Include a way to step backwards, so as not to miss any hits. Need to make a queue..?
@@ -1714,6 +1867,8 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
                 coords, displayIndices = truncateToUTR5(cdsStart, coords, displayIndices)
             else:
                 coords, displayIndices = truncateToUTR3(cdsEnd, coords, displayIndices)
+        elif targetRegion == "PROMOTER":
+                coords, displayIndices = truncateToPROMOTER(strand, coords, displayIndices)
         elif targetRegion == "UTR3":
             if strand == "+":
                 coords, displayIndices = truncateToUTR3(cdsEnd, coords, displayIndices)
@@ -1890,6 +2045,9 @@ def mode_select(var, index, MODE):
     elif MODE == CPF1:
         return CPF1_DEFAULT[index]
 
+    elif MODE == NICKASE:
+        return NICKASE_DEFAULT[index]
+
     sys.stderr.write("Unknown model %s\n" % MODE)
     sys.exit(EXIT['PYTHON_ERROR'])
 
@@ -1909,9 +2067,12 @@ def main():
     parser.add_argument("-BB", "--backbone", default=None, metavar="BACKBONE", help="Penalize self-complementarity versus backbone regions (comma-separated list, same strand as guide). Requires -C.")
     parser.add_argument("-R5", "--replace5P", default=None, metavar="REPLACE_5P", help="Replace bases from 5' end (with e.g. 'GG') ")  ## FIX: AT THE MOMENT THIS IS ONLY APPLIES TO FOLDING/SELF-COMPL
     parser.add_argument("-t", "--target", default="CODING", dest="targetRegion", help="Target the whole gene CODING/WHOLE/UTR5/UTR3/SPLICE. Default is CODING.")
-    parser.add_argument("-T", "--MODE", default=1, type=int, choices=[1, 2, 3], help="Set mode (int): default is Cas9 = 1, Talen = 2, Cpf1 = 3")
+    parser.add_argument("-T", "--MODE", default=1, type=int, choices=[1, 2, 3, 4], help="Set mode (int): default is Cas9 = 1, Talen = 2, Cpf1 = 3, Nickase = 4")
     parser.add_argument("--taleMin", default=14, type=int, help="Minimum distance between TALENs. Default is 14.")  # 14 + 18(length of TALE) = 32
     parser.add_argument("--taleMax", default=20, type=int, help="Maximum distance between TALENs. Default is 20.")  # 20 + 18(length of TALE) = 38
+    parser.add_argument("--nickaseMin", default=10, type=int, help="Minimum distance between TALENs. Default is 10.") 
+    parser.add_argument("--nickaseMax", default=31, type=int, help="Maximum distance between TALENs. Default is 31.")
+    parser.add_argument("--offtargetMaxDist", default=100, type=int, help="Maximum distance between offtargets for Nickase. Default is 100.")
     parser.add_argument("-f", "--fivePrimeEnd", default="NN", metavar="FIVE_PRIME_END", help="Specifies the requirement of the two nucleotides 5' end of the CRISPR guide: A/C/G/T/N. Default: NN.")
     parser.add_argument("-n", "--enzymeCo", default="N", metavar="ENZYME_CO", help="The restriction enzyme company for TALEN spacer.")
     parser.add_argument("-R", "--minResSiteLen", type=int, default=4, help="The minimum length of the restriction enzyme.")
@@ -1943,6 +2104,10 @@ def main():
     args.maxMismatches = mode_select(args.maxMismatches, "MAX_MISMATCHES", args.MODE)
     args.maxOffTargets = mode_select(args.maxOffTargets, "MAX_OFFTARGETS", args.MODE)
 
+    # Add TALEN length
+    args.nickaseMin += args.guideSize
+    args.nickaseMax += args.guideSize
+
     if args.scoreSelfComp:
         if args.backbone:
             tmp = args.backbone.strip().split(",")
@@ -1956,6 +2121,8 @@ def main():
     else:
         if args.MODE == TALENS:
             padSize = args.taleMax
+        elif args.MODE == NICKASE:
+            padSize = args.nickaseMax
         elif args.MODE == CRISPR or args.MODE == CPF1:
             padSize = args.guideSize
 
@@ -1973,10 +2140,15 @@ def main():
         guideClass = Guide
         sortOutput = sort_CRISPR_guides
     elif args.MODE == TALENS:
-        # Set mismatch checking policy
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, None)
         guideClass = Guide
         evalSequence = eval_TALENS_sequence
+        sortOutput = sort_TALEN_pairs
+    elif args.MODE == NICKASE:
+        (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
+        allowed = getAllowedFivePrime(args.fivePrimeEnd)
+        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
+        guideClass = Cas9
         sortOutput = sort_TALEN_pairs
 
     # Connect to database if requested
@@ -2019,6 +2191,14 @@ def main():
             sys.stderr.write("No TALEN pairs could be generated for this region.\n")
             sys.exit(EXIT['GENE_ERROR'])
         cluster, results = clusterPairs(pairs)
+        
+    elif args.MODE == NICKASE:
+        pairs = pairCas9(results, sequences, args.guideSize, int(args.nickaseMin), int(args.nickaseMax), args.enzymeCo, args.maxOffTargets, args.minResSiteLen, args.offtargetMaxDist)
+
+        if (not len(pairs)):
+            sys.stderr.write("No Cas9 nickase pairs could be generated for this region.\n")
+            sys.exit(EXIT['GENE_ERROR'])
+        cluster, results = clusterPairs(pairs)
 
     # Sorts pairs according to score/penalty and cluster 
     if strand =="-":
@@ -2051,11 +2231,15 @@ def main():
             print "%s\t%s" % (i+1, sortedOutput[i])            
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
 
-    elif args.MODE == TALENS:
-        print "Rank\tTarget sequence\tGenomic location\tExon\tTALE 1\tTALE 2\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tRestriction sites\tBest ID"
+    elif args.MODE == TALENS or args.MODE == NICKASE:
+        
+        if args.MODE == TALENS:
+            print "Rank\tTarget sequence\tGenomic location\tExon\tTALE 1\tTALE 2\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tRestriction sites\tBest ID"
+        else:
+            print "Rank\tTarget sequence\tGenomic location\tExon\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tRestriction sites\tBest ID"
         finalOutput = []
         for cluster in listOfClusters:  ## FIX: WHY ARE THERE EMPTY CLUSTERS???
-            if len(cluster) ==0:
+            if len(cluster) == 0:
                 continue
 
             finalOutput.append(cluster[0])
@@ -2065,7 +2249,6 @@ def main():
 
         for i in range(len(sortedFinalOutput)):
             print "%s\t%s\t%s" % (i+1,sortedFinalOutput[i], sortedFinalOutput[i].ID)
-
     
     # Print gene annotation files
 
@@ -2100,7 +2283,7 @@ def main():
             if args.MODE == CRISPR or args.MODE == CPF1:                
                 el.append(i+1)
                 el.extend(resultCoords[i])
-            elif args.MODE == TALENS:
+            elif args.MODE == TALENS or args.MODE == NICKASE:
                 el.extend(resultCoords[i])
                 
             cutcoords.append(el)
