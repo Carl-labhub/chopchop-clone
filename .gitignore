@@ -1,0 +1,5 @@
+/temp/*
+/genomes/*
+.project
+.pydevproject
+chopchop.pyc
