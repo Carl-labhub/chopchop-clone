@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python2.7
 
 #####################
 ##
@@ -13,7 +13,14 @@ import math
 import json
 import string
 import argparse
+import pickle
+import pandas
+import sklearn
+import numpy
+import featurization as feat
+import scipy.stats as ss
 
+from collections import defaultdict
 from Bio import SeqIO, SeqFeature, SeqRecord
 from Bio.Restriction import Analysis, RestrictionBatch
 from Bio.Seq import Seq
@@ -31,7 +38,7 @@ from subprocess import Popen, PIPE
 
 # PATHs
 PRIMER3 = "primer3_core"
-BOWTIE = "bowtie"
+BOWTIE = "bowtie/bowtie"
 TWOBITTOFA = "twoBitToFa"
 TWOBIT_INDEX_DIR = "genomes"
 BOWTIE_INDEX_DIR = "genomes"
@@ -50,10 +57,9 @@ TARGET_MAX = 20000
 CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
                   "PAM": "NGG",
                   "MAX_OFFTARGETS" : 50,
-                  "MAX_MISMATCHES" : 2,
+                  "MAX_MISMATCHES" : 3,
                   "SCORE_GC" : True,
                   "SCORE_FOLDING" : True}
-
 
 TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
                  "PAM": "",
@@ -62,17 +68,17 @@ TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
                  "SCORE_GC" : False,
                  "SCORE_FOLDING" : False}
 
-CPF1_DEFAULT =  {"GUIDE_SIZE" : 20,
-                 "PAM": "TTN",
+CPF1_DEFAULT =  {"GUIDE_SIZE" : 24,
+                 "PAM": "TTTN",
                  "MAX_OFFTARGETS" : 50,
-                 "MAX_MISMATCHES" : 2,
+                 "MAX_MISMATCHES" : 3,
                  "SCORE_GC" : True,
                  "SCORE_FOLDING" : True}
 
 NICKASE_DEFAULT =  {"GUIDE_SIZE" : 20,
                     "PAM": "NGG",
                     "MAX_OFFTARGETS" : 50,
-                    "MAX_MISMATCHES" : 2,
+                    "MAX_MISMATCHES" : 3,
                     "SCORE_GC" : True,
                     "SCORE_FOLDING" : True}
 
@@ -88,41 +94,101 @@ MAX_IN_CLUSTER = 15
 # SCORES
 SCORE = {"INPAIR_OFFTARGET_0" : 5000,
          "INPAIR_OFFTARGET_1" : 3000,
-         "INPAIR_OFFTARGET_2" : 1000,
+         "INPAIR_OFFTARGET_2" : 2000,
+         "INPAIR_OFFTARGET_3" : 1000,
          "OFFTARGET_PAIR_SAME_STRAND" : 10000,
          "OFFTARGET_PAIR_DIFF_STRAND" : 5000,
-         "MAX_OFFTARGETS" : 4000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
-         "XU_2015" : 100,
+         "MAX_OFFTARGETS" : 20000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
+         "COEFFICIENTS" : 100,
          "CRISPR_BAD_GC" : 500,
-         "FOLDING" : 300}
+         "FOLDING" : 1}
 
-SINGLE_OFFTARGET_SCORE = [1000, 100, 10]
+SINGLE_OFFTARGET_SCORE = [1000, 800, 600, 400]
 GC_LOW = 40
 GC_HIGH = 70
 
-XU_2015 = {'C18':-0.113781378,
-          'G17':0.080289971,
-          'A16':0.025840846,'G16':0.072680697,
-          'G15':0.100642827,
-          'G14':0.082839514,
-          'T14':-0.070933894,
-          'A12':0.02156311,
-          'A11':0.129118902,
-          'A10':0.030483786,'T10':-0.169986128,
-          'A9':0.093646913,
-          'G7':-0.214271553,'T7':0.073750154,
-          'A6':0.202820147,
-          'A5':0.129158071,
-          'G4':0.107523301,'T4':-0.349240474,
-          'C3':0.23502822,'T3':-0.145493093,
-          'G2':0.238517854,'T2':-0.300975354,
-          'C1':-0.125927965,'G1':0.353047311,'T1':-0.221752041,
-          'PAMT1':-0.155910373,
-          '1C':0.179639101,
-          '4T':-0.116646129}
+G_20 = {"Intercept": -30,
+        "G1": 60}
 
-#number of nucleotides counted towards scoring after PAM, end before 5' gRNA start eg. 3: 321 gRNA PAM 123
-DOWNSTREAM_NUC = 6
+XU_2015 = {'C18':-0.113781378,
+           'G17':0.080289971,
+           'A16':0.025840846,'G16':0.072680697,
+           'G15':0.100642827,
+           'G14':0.082839514,
+           'T14':-0.070933894,
+           'A12':0.02156311,
+           'A11':0.129118902,
+           'A10':0.030483786,'T10':-0.169986128,
+           'A9':0.093646913,
+           'G7':-0.214271553,'T7':0.073750154,
+           'A6':0.202820147,
+           'A5':0.129158071,
+           'G4':0.107523301,'T4':-0.349240474,
+           'C3':0.23502822,'T3':-0.145493093,
+           'G2':0.238517854,'T2':-0.300975354,
+           'C1':-0.125927965,'G1':0.353047311,'T1':-0.221752041,
+           'PAMT1':-0.155910373,
+           '1C':0.179639101,
+           '4T':-0.116646129}
+
+DOENCH_2014 = {"Intercept": 0.5976361543,
+               "G23": -0.2753771278,"TG22": -0.625778696,
+               "A22": -0.3238874564,"C22": 0.1721288713,
+               "C21": -0.1006662089,
+               "C20": -0.20180294,"G20": 0.2459566331,"CG19": 0.3000433167,
+               "C19": 0.0983768352,"A19": 0.0364400412,"AA18":-0.8348362447,"AT18": 0.7606277721,
+               "C18":-0.7411812913,"G18":-0.3932643973,"GG17":-0.4908167494,
+               "A13":-0.4660990147,"GG12":-1.5169074394,"AT12": 0.7092612002,"CT12": 0.4962986088,"TT12":-0.5868738941,
+               "GG11":-0.3345637351,
+               "AG10": 0.7638499303,"CG10":-0.5370251697,
+               "A10": 0.0853769455,"C10":-0.0138139718,
+               "A9": 0.2726205124,"C9": -0.119022648,"T9":-0.2859442224,
+               "A8": 0.0974545916,"G8":-0.1755461698,"GT7":-0.7981461328,
+               "C7":-0.3457954508,"G7":-0.6780964263,
+               "A6": 0.2250890296,"C6":-0.5077940514,"GG5":-0.6668087295,"CT5": 0.3531832525,
+               "G5":-0.4173735974,"T5":-0.0543069593,"CC4": 0.7480720923,"GT4":-0.3672667722,
+               "G4": 0.379899366,"T4":-0.0907126437,"CA3": 0.5682091316,"GC3": 0.3290720742,"AG3":-0.8364567552,"GG3":-0.7822075841,
+               "C3": 0.0578233185,"T3":-0.5305672958,"CT2":-1.0296929571,
+               "T2":-0.8770074285,"GC1": 0.8561978226,"TC1":-0.4632076791,
+               "C1":-0.8762358461,"G1": 0.2789162593,"T1":-0.4031022177,"AA0":-0.5794923887,"GA0": 0.6490755373,
+               "PAMC1": 0.287935617,"PAMA1":-0.0773007042,"PAMT1":-0.2216372166, "PAMAG1":-0.0773007042,"PAMCG1":  0.287935617,"PAMTG1":-0.2216372166,
+               "1G":-0.6890166818,"1T": 0.1178775773,
+               "2C":-0.1604453039,"2GG":-0.6977400239,
+               "3G": 0.3863425849,
+               "gc_low":-0.2026258943,
+               "gc_high": -0.166587752}
+
+MORENO_MATEOS_2015 = {"Intercept": 0.1839309436,
+                      "G26":-0.0296937089,
+                      "CG23":0.0246817853,"GT23":0.0229499956,
+                      "G23":-0.0054488693,"A23":-0.0421535206,
+                      "C18":0.0024492239,"G18":0.1146006812,"GG17":-0.0015779899,"CG17":0.0541714023,
+                      "G17":0.0677391822,"GA16":0.0637170933,"GG16":0.0268021579,"AA16":-0.0169054146,
+                      "A16":-0.0182872921,"G16":0.0209290394,"TG15":0.0536784362,
+                      "A15":0.0116332345,"G15":0.0275911379,"GG14":0.0418830086,
+                      "A14":0.0176289243,"T14":0.0354451707,"C14":0.069495944,"G14":0.0613609047,"GG13":0.0743558476,"TT13":-0.0861877104,
+                      "G13":0.0251167144,"A13":-0.0184872292,
+                      "A12":-0.0105952955,"C12":-0.0004777273,"G12":0.0511297167,"GT11":0.0533728222,
+                      "G11":0.0379709424,"C11":-0.0216386089,
+                      "G10":0.0154937801,"TT9":0.0349288099,
+                      "A9":-0.033820432,"G9":0.0164578159,"GT8":0.0459089908,"TG8":0.0023917441,"TT8":-0.094424075,
+                      "A8":-0.0155764989,"G8":0.0179168437,"AA7":-0.0973770966,
+                      "C7":0.0150895135,"AG6":0.0097407989,
+                      "T6":-0.0687304967,"C6":0.0342629207,"CC5":0.0889196009,
+                      "T5":0.0132240349,"G5":0.1011443803,"C5":0.0376316197,"A5":0.0319309088,
+                      "T4":-0.0014222433,"CC3":0.0950722865,"TG3":0.1067185626,"GA3":-0.0543384557,"GT3":-0.0663880754,
+                      "T3":-0.0119961724,"A3":0.0374664775,"C3":0.0529723137,"G3":0.1054883249,"AC2":0.0622193698,"TG2":0.0609521143,
+                      "C2":-0.031648353,"A2":0.010506405,"GG1":0.1115594407,"CG1":-0.0734536087,
+                      "G1":0.0361466487,"C1":-0.0003689729,"TC0":-0.0842648932,
+                      "PAMT1":-0.0002808449,"PAMA1":0.0191268154,"PAMC1":0.0799339215,"PAMG1":0.0851510516,
+                      "1G":-0.0463159143,"1C":-0.0131827326,"1T":0.0172631618,"1CA":0.0577598507,
+                      "2C":-0.0307155561,"2A":0.0015897498,"2TG":0.0481368123,"2GT":0.0734253504,"2GA":-0.01227989,
+                      "3G":0.0307124897,
+                      "5G":-0.0141671226,"5T":-0.0176476917,"5GA":-0.0377977074,"5AG":-0.0419359085,
+                      "6A":0.0485962592}
+
+#n":umber of nucleotides counted towards scoring after PAM, end before 5' gRNA start eg. 3: 321 gRNA PAM 123
+DOWNSTREAM_NUC = 15
 
 # EXIT CODES
 EXIT = {"PYTHON_ERROR" : 1,
@@ -228,8 +294,10 @@ class Guide(object):
     """ This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
     "sort_offTargets" applies to just the Tale class """
 
-    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, PAM, replace5prime=None):        
+    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, PAM, replace5prime=None, scoringMethod=None, genome=None):        
         
+        self.scoringMethod = scoringMethod
+        self.genome = genome
         self.PAM = PAM
         # From the guide's name we can get the chromosome
         self.flagSum = flagSum
@@ -255,7 +323,7 @@ class Guide(object):
         self.score = 0
 
         # Off target count
-        self.offTargetsMM = [0] * 3
+        self.offTargetsMM = [0] * 4
 
         # The location of the last digit of the exon start in the name string
         mid = coord.find('-')        
@@ -318,7 +386,7 @@ class Guide(object):
         for i in range(0,len(fwd)-STEM_LEN):
             if gccontent(fwd[i:i+STEM_LEN]) >= 0.5:
                 if fwd[i:i+STEM_LEN] in rvs[0:(L-i)] or any([fwd[i:i+STEM_LEN] in item for item in backbone_regions]):
-                    sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+STEM_LEN]))
+                    #sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+STEM_LEN]))
                     self.folding += 1
                     
         self.score += self.folding * SCORE['FOLDING']
@@ -357,8 +425,8 @@ class Guide(object):
         if checkMismatch and hit.flagSum == 0:
             countMMPos = countMMPos[::-1]
 
-        if hit.start == 13080466:
-            sys.stderr.write("ALL  [%s]\n" % countMMPos)
+        #if hit.start == 13080466:
+        #    sys.stderr.write("ALL  [%s]\n" % countMMPos)
 
         self.offTarget_hash[hit_id] = hit
         if checkMismatch:            
@@ -386,6 +454,7 @@ class Guide(object):
                 self.offTargetsMM[0] += maxOffTargets
                 self.offTargetsMM[1] += maxOffTargets
                 self.offTargetsMM[2] += maxOffTargets
+                self.offTargetsMM[3] += maxOffTargets
 
         self.offTargets_sorted = False
 
@@ -408,7 +477,7 @@ class Guide(object):
 
     def __str__(self):
         self.sort_offTargets()
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2])
+        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.offTargetsMM[3])
                   
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -417,16 +486,22 @@ class Guide(object):
 
         return ";".join(offTargets)
 
-        
+
 class Cas9(Guide):
     def __init__(self, *args, **kwargs):
         super(Cas9, self).__init__(*args, **kwargs)
-        self.Xu2015score = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, XU_2015)
-        self.score = self.score - self.Xu2015score * SCORE['XU_2015']
+        if self.scoringMethod == "CHARI_2015":
+            self.CoefficientsScore = 0
+        elif self.scoringMethod == "DOENCH_2016":
+            self.CoefficientsScore = scoreDoench_2016(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim)
+            self.score = self.score - self.CoefficientsScore * SCORE['COEFFICIENTS']
+        else:
+            self.CoefficientsScore = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[self.scoringMethod])
+            self.score = self.score - self.CoefficientsScore * SCORE['COEFFICIENTS']
 
     def __str__(self):
         self.sort_offTargets()
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.Xu2015score)
+        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.offTargetsMM[3], self.CoefficientsScore)
     
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):
         if replace5prime:
@@ -442,7 +517,7 @@ class Cas9(Guide):
         for i in range(0,len(fwd)-STEM_LEN):
             if gccontent(fwd[i:i+STEM_LEN]) >= 0.5:
                 if fwd[i:i+STEM_LEN] in rvs[0:(L-i)] or any([fwd[i:i+STEM_LEN] in item for item in backbone_regions]):
-                    sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+STEM_LEN]))
+                    #sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+STEM_LEN]))
                     self.folding += 1
                     
         self.score += self.folding * SCORE['FOLDING']
@@ -520,12 +595,13 @@ class Pair:
             for opt in [hit1.opts, hit2.opts]:
                 if opt == "NM:i:0":
                     indivScore += SCORE['INPAIR_OFFTARGET_0']
-                elif opt == "NM:i:1":
+                if opt == "NM:i:1":
                     indivScore += SCORE['INPAIR_OFFTARGET_1']
                 if opt == "NM:i:2":
                     indivScore += SCORE['INPAIR_OFFTARGET_2']
+                if opt == "NM:i:3":
+                    indivScore += SCORE['INPAIR_OFFTARGET_3']
 
-           
         # Compute penalties (scores) for off-target hits. Worst = off-target pair, Not so bad = off-target single tale
         self.score = (self.sameStrandOffTarget * SCORE['OFFTARGET_PAIR_SAME_STRAND']) + (self.diffStrandOffTarget * SCORE['OFFTARGET_PAIR_DIFF_STRAND']) + tale1.score + tale2.score + indivScore
         resSites = findRestrictionSites(self.spacerSeq, enzymeCo, minResSiteLen)  
@@ -536,7 +612,7 @@ class Pair:
         # This creates a tab delimited list of output, with the final column as a semicolon-separated list of REs that cut in the spacer        
         sequence = str(self.tale1.guideSeq) + "*" + self.spacerSeq + "*" + str(self.tale2.guideSeq)
 
-        return "%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (sequence, self.chrom, self.start, self.tale1.exonNum, self.tale1.rvd, self.tale2.rvd, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], self.restrictionSites)
+        return "%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (sequence, self.chrom, self.start, self.tale1.exonNum, self.tale1.rvd, self.tale2.rvd, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], self.tale1.offTargetsMM[3], self.tale2.offTargetsMM[3], self.restrictionSites)
 
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -598,12 +674,13 @@ class Nickase:
             for opt in [hit1.opts, hit2.opts]:
                 if opt == "NM:i:0":
                     indivScore += SINGLE_OFFTARGET_SCORE[0]
-                elif opt == "NM:i:1":
+                if opt == "NM:i:1":
                     indivScore += SINGLE_OFFTARGET_SCORE[1]
                 if opt == "NM:i:2":
                     indivScore += SINGLE_OFFTARGET_SCORE[2]
+                if opt == "NM:i:3":
+                    indivScore += SINGLE_OFFTARGET_SCORE[3]
 
-           
         # Compute penalties (scores) for off-target hits. Worst = off-target pair, Not so bad = off-target single tale
         self.score = (self.diffStrandOffTarget * SCORE['OFFTARGET_PAIR_DIFF_STRAND']) + tale1.score + tale2.score - indivScore
         resSites = findRestrictionSites(self.spacerSeq, enzymeCo, minResSiteLen)  
@@ -614,7 +691,7 @@ class Nickase:
         # This creates a tab delimited list of output, with the final column as a semicolon-separated list of REs that cut in the spacer        
         sequence = str(self.tale1.guideSeq) + "*" + self.spacerSeq + "*" + str(self.tale2.guideSeq)
 
-        return "%s\t%s:%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (sequence, self.chrom, self.start, self.tale1.exonNum, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], self.restrictionSites)
+        return "%s\t%s:%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (sequence, self.chrom, self.start, self.tale1.exonNum, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], self.tale1.offTargetsMM[3], self.tale2.offTargetsMM[3], self.restrictionSites)
 
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -639,25 +716,144 @@ class Nickase:
 def scoregRNA(seq, PAM, tail, lookup):
     """ Calculate score from model coefficients. score is 0-1, higher is better """
     score = 0
+    if lookup.has_key("Intercept"):
+        score = lookup["Intercept"]
+
     seq = seq[::-1] #we calculate from PAM in a way: 321PAM123
+
+    if lookup.has_key("gc_low"):
+        gc = seq[:20].count('G') + seq[:20].count('C')
+        if gc < 10:
+            score = score + (abs(gc-10) * lookup["gc_low"])
+        elif gc > 10:
+            score = score + ((gc-10) * lookup["gc_high"])
     
     for i in range(len(seq)):
         key = seq[i] + str(i+1)
         if lookup.has_key(key):
             score += lookup[key]
+
+        if i+1 < len(seq):
+            double_key = seq[i] + seq[i+1] + str(i+1)
+            if lookup.has_key(double_key):
+                score += lookup[double_key]
+
+        if i == 0:
+            double_key = PAM[0] + seq[0] + str(0)
+            if lookup.has_key(double_key):
+                score += lookup[double_key]
     
     for i in range(len(PAM)):
         key = 'PAM' + PAM[i] + str(i+1)
         if lookup.has_key(key):
             score += lookup[key]
+
+        if i+1 < len(PAM):
+            double_key = 'PAM' + PAM[i] + PAM[i+1] + str(i+1)
+            if lookup.has_key(double_key):
+                score += lookup[double_key]
             
     for i in range(len(tail)):
         key = str(i+1) + tail[i]
         if lookup.has_key(key):
             score += lookup[key]
+
+        if i+1 < len(tail):
+            double_key = str(i+1) + tail[i] + tail[i+1]
+            if lookup.has_key(double_key):
+                score += lookup[double_key]
     
     score = 1/(1 + math.e** -score)
     return score
+
+
+def scoreChari_2015(svmInputFile, svmOutputFile, PAM, genome):
+    """ Calculate score from SVM model as in Chari 2015 20-NGG or 20-NNAGAAW, only for hg19 and mm10"""
+
+    model = 'bin/models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
+    dist = 'bin/models/Hg19_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
+      
+    if PAM == 'NGG' and genome == 'mm10':
+      model = 'bin/models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
+      dist = 'bin/models/Mm10_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
+    elif PAM == 'NNAGAAW' and genome == 'hg19':
+      model = 'bin/models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
+      dist = 'bin/models/Hg19_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
+    elif PAM == 'NNAGAAW' and genome == 'mm10':
+      model = 'bin/models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
+      dist = 'bin/models/Mm10_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
+
+    prog = Popen("./bin/svm_light/svm_classify -v 0 %s %s %s" % (svmInputFile, model, svmOutputFile), shell=True)    
+    prog.communicate()
+
+    svmAll = open(dist,'r')
+    svmThis = open(svmOutputFile, 'r')
+
+    # first through go all scores and get the max and min
+    allData = []
+    for line in svmAll:
+      line = line.rstrip('\r\n')
+      allData.append(float(line))
+    svmAll.close()
+
+    scoreArray = []
+    for line in svmThis:
+      line = line.rstrip('\r\n')
+      scoreArray.append(float(line))
+
+    return [ss.percentileofscore(allData, i) for i in scoreArray]
+
+
+def concatenate_feature_sets(feature_sets):
+    '''
+    Given a dictionary of sets of features, each in a Pandas.DataFrame,
+    concatenate them together to form one big np.array, and get the dimension
+    of each set
+    Returns: inputs, dim
+    Source: Doench 2016
+    '''
+    assert feature_sets != {}, "no feature sets present"
+    F = feature_sets[feature_sets.keys()[0]].shape[0]
+    for set in feature_sets.keys():
+        F2 = feature_sets[set].shape[0]
+        assert F == F2, "not same # individuals for features %s and %s" % (feature_sets.keys()[0], set)
+
+    N = feature_sets[feature_sets.keys()[0]].shape[0]
+    inputs = numpy.zeros((N, 0))
+    feature_names = []
+    dim = {}
+    dimsum = 0
+    for set in feature_sets.keys():
+        inputs_set = feature_sets[set].values
+        dim[set] = inputs_set.shape[1]
+        dimsum += dim[set]
+        inputs = numpy.hstack((inputs, inputs_set))
+        feature_names.extend(feature_sets[set].columns.tolist())
+
+    return inputs, dim, dimsum, feature_names
+
+def scoreDoench_2016(seq, PAM, tail):
+    """ Calculate score from 27-NGG-3 model as in Doench 2016 """
+    if len(seq) < 24:
+        return 0
+
+    if len(PAM) < 3:
+        return 0
+
+    try:
+        with open('bin/models/Doench_2016_model_nopos.pickle', 'rb') as f:
+                model= pickle.load(f)
+
+        model, learn_options = model
+        learn_options["V"] = 2
+        Xdf = pandas.DataFrame(columns=[u'30mer', u'Strand'], data=[[''.join((seq[-24:], PAM, tail[:3])), 'NA']])
+        gene_position = pandas.DataFrame(columns=[u'Percent Peptide', u'Amino Acid Cut position'], data=[[-1, -1]])
+        feature_sets = feat.featurize_data(Xdf, learn_options, pandas.DataFrame(), gene_position)
+        inputs, dim, dimsum, feature_names = concatenate_feature_sets(feature_sets)
+        return model.predict(inputs)[0]
+    except:
+        return 0
+
 
 def gccontent(seq):
         gc = 0
@@ -710,18 +906,18 @@ def truncateToUTR5(cdsStart, exons, indices):
     return (exons[:(endExon+1)], indices[:(endExon+1)])
 
 
-def truncateToPROMOTER(strand, exons, indices):
-    """ Truncates the gene to only target promoter +-200bp TSS """
+def truncateToPROMOTER(strand, exons, indices, bp):
+    """ Truncates the gene to only target promoter +-bp TSS """
     
     if (strand == "+"):
         firstExon = exons[0]
-        firstExon[1] = firstExon[1] - 200
-        firstExon[2] = firstExon[1] + 200
+        firstExon[2] = firstExon[1] + bp
+        firstExon[1] = firstExon[1] - bp
         return ([firstExon], [indices[0]])
     else:
         firstExon = exons[-1]
-        firstExon[1] = firstExon[1] - 200
-        firstExon[2] = firstExon[1] + 200
+        firstExon[2] = firstExon[1] + bp
+        firstExon[1] = firstExon[1] - bp
         return ([firstExon], [indices[-1]])
     
     return (exons, indices)
@@ -918,27 +1114,20 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
     return sequences, fastaSeq
 
 
-def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets, indexDir, genome, maxMismatches):
+def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets, indexDir, genome, maxMismatches):
     """ Runs bowtie """
 
     bowtieResultsFile = '%s/output.sam' % outputDir
 
-    if uniqueMethod_Hsu:
-        command = "%s -v 2 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
-    elif uniqueMethod_Cong:
+    if uniqueMethod_Cong:
         # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the -n option. Outside of that seed, up to 2 mismatches are searched. 
-        # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 2 mismatches
-        command = "%s -l 14 -n 1 -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
+        # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 3 mismatches
+        command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, (PAMlength + 11), maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
     else:
-        # The -v tag in bowtie specifies how many mismatches bowtie will allow.
-        # The --sam-nohead tag specifies that the output files will not contain a header portion. 
-        # -m Supresses all alignments a particular read or pair if more than maxOffTargets reportable alignments exist for it
-        # -k specifies up to how many good reads will be reported (50 in our case).
         command = "%s -v %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
-
-    sys.stderr.write("%s\n" % command)
+    
     prog = Popen(command, shell=True)
-    prog.wait() 
+    prog.wait()
 
     if (prog.returncode != 0):
         sys.stderr.write("Running bowtie failed\n");
@@ -947,7 +1136,7 @@ def runBowtie(uniqueMethod_Hsu, uniqueMethod_Cong, fastaFile, outputDir, maxOffT
     return bowtieResultsFile
 
 
-def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM):
+def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM, scoringMethod=None, genome=None):
     """ Parses bowtie hits and build list of guides"""
     
     currGuide = None
@@ -961,7 +1150,7 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
             elements = line[0].split(":") #removes from name 5' and 3' tails
             name = ":".join(elements[0:3])
             if currGuide == None or name != currGuide.name:
-                currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, PAM, replace5prime)
+                currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, PAM, replace5prime, scoringMethod, genome)
                 guideList.append(currGuide)
 
             # Adds hit to off-target list of current guide.
@@ -1073,7 +1262,7 @@ def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, max
         sys.stderr.write("Running bowtie on primers failed\n");
         sys.exit(EXIT['BOWTIE_PRIMER_ERROR']);
 
-    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, [], [], False, False, None, None, maxOffTargets, None, None, None)
+    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, [], [], False, False, None, None, maxOffTargets, None, None, None, None, None)
 
 
 def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
@@ -1329,7 +1518,7 @@ def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, m
 
         for member in clust[1:]:
             # Write the other cluster members to file
-            fileHandler[bestInCluster.ID].write("%s*%s*%s,%s:%s,%s,%s,%s/%s,%s/%s,%s/%s;" % (member.tale1.guideSeq, member.spacerSeq, member.tale2.guideSeq, member.chrom, member.start, member.tale1.exonNum, len(member.offTargetPairs), member.tale1.offTargetsMM[0], member.tale2.offTargetsMM[0], member.tale1.offTargetsMM[1], member.tale2.offTargetsMM[1], member.tale1.offTargetsMM[2], member.tale2.offTargetsMM[2]))
+            fileHandler[bestInCluster.ID].write("%s*%s*%s,%s:%s,%s,%s,%s/%s,%s/%s,%s/%s,%s/%s;" % (member.tale1.guideSeq, member.spacerSeq, member.tale2.guideSeq, member.chrom, member.start, member.tale1.exonNum, len(member.offTargetPairs), member.tale1.offTargetsMM[0], member.tale2.offTargetsMM[0], member.tale1.offTargetsMM[1], member.tale2.offTargetsMM[1], member.tale1.offTargetsMM[2], member.tale2.offTargetsMM[2], member.tale1.offTargetsMM[3], member.tale2.offTargetsMM[3]))
 
         fileHandler[bestInCluster.ID].write("\n"+current.restrictionSites+"\n")
 
@@ -1771,7 +1960,7 @@ def coordsToJson(coords, cdsStart, cdsEnd, strand):
     return newCoords
 
 
-def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exonSubset):
+def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exonSubset, promoter_bp):
     targets = []
     displayIndices = []
     visCoords = []
@@ -1868,7 +2057,7 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
             else:
                 coords, displayIndices = truncateToUTR3(cdsEnd, coords, displayIndices)
         elif targetRegion == "PROMOTER":
-                coords, displayIndices = truncateToPROMOTER(strand, coords, displayIndices)
+                coords, displayIndices = truncateToPROMOTER(strand, coords, displayIndices, promoter_bp)
         elif targetRegion == "UTR3":
             if strand == "+":
                 coords, displayIndices = truncateToUTR3(cdsEnd, coords, displayIndices)
@@ -1901,7 +2090,7 @@ def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc
     fastaFile = open(fastaFile, 'r')
     for line in fastaFile:
         if line[0] == ">":
-            seq_name = line[1:].strip()
+            seq_name = '_'.join(line[1:].strip().split())
         else:
             sequence += line.rstrip()        
     fastaFile.close()
@@ -2060,6 +2249,7 @@ def main():
     parser.add_argument("-r", "--gRVD", default="NH ", dest="g_RVD", action="store_const", const="NN ",  help="Use RVD 'NN' instead of 'NH' for guanine nucleotides. 'NH' appears to be more specific than 'NN' but the choice depends on assembly kit.")
     parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")   
     parser.add_argument("-e", "--exon", help="Comma separated list of exon indices. Only find sites in this subset. ", metavar="EXON_NUMBER", dest="exons")   
+    parser.add_argument("-TP", "--targetPromoter", default=200, type=int, help="how many bp to target upstream and downstream of TSS")
     parser.add_argument("-G", "--genome", default="danRer7", metavar="GENOME", help="The genome to search.") 
     parser.add_argument("-g", "--guideSize", default=None, type=int, metavar="GUIDE_SIZE", help="The size of the guide RNA.")
     parser.add_argument("-c", "--scoreGC", default=None, action="store_false", help="Score GC content. True for CRISPR, False for TALENs.")
@@ -2076,8 +2266,8 @@ def main():
     parser.add_argument("-f", "--fivePrimeEnd", default="NN", metavar="FIVE_PRIME_END", help="Specifies the requirement of the two nucleotides 5' end of the CRISPR guide: A/C/G/T/N. Default: NN.")
     parser.add_argument("-n", "--enzymeCo", default="N", metavar="ENZYME_CO", help="The restriction enzyme company for TALEN spacer.")
     parser.add_argument("-R", "--minResSiteLen", type=int, default=4, help="The minimum length of the restriction enzyme.")
-    parser.add_argument("-v", "--maxMismatches", default=None, metavar="MAX_MISMATCHES", help="The number of mismatches to check across the sequence.")
-    parser.add_argument("-m", "--maxOffTargets", default=50, metavar="MAX_HITS", help="The maximum number of off targets allowed.")
+    parser.add_argument("-v", "--maxMismatches", default=3, type=int, choices=[0, 1, 2, 3], metavar="MAX_MISMATCHES", help="The number of mismatches to check across the sequence.")
+    parser.add_argument("-m", "--maxOffTargets", metavar="MAX_HITS", help="The maximum number of off targets allowed.")
     parser.add_argument("-M", "--PAM", type=str, help="The PAM motif.")
     parser.add_argument("-o", "--outputDir", default="./", metavar="OUTPUT_DIR", help="The output directory. Default is the current directory.")
     parser.add_argument("-F", "--fasta", default=False, action="store_true", help="Use FASTA file as input rather than gene or genomic region.")
@@ -2087,10 +2277,10 @@ def main():
     parser.add_argument("-A", "--primerFlanks", default=300, type=int, help="Size of flanking regions to search for primers.")
     parser.add_argument("-a", "--guidePadding", default=20, type=int, help="Minimum distance of primer to target site.")
     parser.add_argument("-O", "--limitPrintResults", default=1000, dest="limitPrintResults", help="The number of results to print extended information for. Default 1000.")
-    parser.add_argument("-u", "--uniqueMethod_Hsu", default=False, dest="uniqueMethod_Hsu", action="store_true", help="A method to determine how unique the site is in the genome: allows 2 mismatches in first 18 bp (because minimum region can keep constant in bowtie is 5 bp).")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
-    args = parser.parse_args()    
+    parser.add_argument("--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015","G_20"], help="Scoring used for Cas9 and Nickase. Default is G_20")
+    args = parser.parse_args()
 
     # Add TALEN length
     args.taleMin += 18
@@ -2126,7 +2316,7 @@ def main():
         elif args.MODE == CRISPR or args.MODE == CPF1:
             padSize = args.guideSize
 
-    # Set default functions for different modes
+    # Set default functions for different modes  
     if args.MODE == CRISPR:
         # Set mismatch checking policy
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
@@ -2168,7 +2358,7 @@ def main():
     if args.fasta:
         sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
     else:
-        targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons)
+        targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
         sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome)
 
     ## Converts genomic coordinates to fasta file of all possible 16-mers
@@ -2178,10 +2368,51 @@ def main():
         
 
     # Run bowtie and get results
-    bowtieResultsFile = runBowtie(args.uniqueMethod_Hsu, args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), BOWTIE_INDEX_DIR, args.genome, int(args.maxMismatches))
-    results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM)  # TALENS: MAKE_PAIRS + CLUSTER
+    bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), BOWTIE_INDEX_DIR, args.genome, int(args.maxMismatches))
+    results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, args.scoringMethod, args.genome)  # TALENS: MAKE_PAIRS + CLUSTER
 
-    
+    if args.scoringMethod == "CHARI_2015" and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10"):
+        try:
+            #make file to score
+            svmInputFile = '%s/chari_score.SVMInput.txt' % args.outputDir
+            svmOutputFile = '%s/chari_score.SVMOutput.txt' % args.outputDir
+            encoding = defaultdict(str)
+            encoding['A'] = '0001'
+            encoding['C'] = '0010'
+            encoding['T'] = '0100'
+            encoding['G'] = '1000'
+
+            svmFile = open(svmInputFile, 'w')
+
+            for guide in results:
+                seq = guide.downstream5prim + guide.strandedGuideSeq[:-len(guide.PAM)]
+                PAM = guide.strandedGuideSeq[-len(guide.PAM):]
+                sequence = (seq[-20:] + PAM).upper()
+                x = 0
+                tw = '-1'
+                # end index
+                if len(sequence)==27:
+                    endIndex = 22
+                else:
+                    endIndex = 21
+                
+                while x < endIndex:
+                    y = 0
+                    while y < 4:
+                        tw = tw + ' ' + str(x+1) + str(y+1) + ':' + encoding[sequence[x]][y]
+                        y += 1
+                    x += 1
+                svmFile.write(tw + '\n')
+            svmFile.close()
+            newScores = scoreChari_2015(svmInputFile, svmOutputFile, args.PAM, args.genome)
+
+            for i, guide in enumerate(results):
+                guide.CoefficientsScore = newScores[i]
+                guide.score = guide.score - (guide.CoefficientsScore/100) * SCORE['COEFFICIENTS']
+        except:
+            pass
+
+
     if args.MODE == CRISPR or args.MODE == CPF1:
         cluster = 0
     elif args.MODE == TALENS:
@@ -2220,13 +2451,13 @@ def main():
     resultCoords = []
 
     if args.MODE == CRISPR:
-        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tG20\tSelf-complementarity\tMM0\tMM1\tMM2\tXu2015"
+        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3\tEfficiency"
         for i in range(len(sortedOutput)):
             print "%s\t%s" % (i+1, sortedOutput[i])            
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
             
     elif args.MODE == CPF1:
-        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2"
+        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
         for i in range(len(sortedOutput)):
             print "%s\t%s" % (i+1, sortedOutput[i])            
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
@@ -2234,9 +2465,9 @@ def main():
     elif args.MODE == TALENS or args.MODE == NICKASE:
         
         if args.MODE == TALENS:
-            print "Rank\tTarget sequence\tGenomic location\tExon\tTALE 1\tTALE 2\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tRestriction sites\tBest ID"
+            print "Rank\tTarget sequence\tGenomic location\tExon\tTALE 1\tTALE 2\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
         else:
-            print "Rank\tTarget sequence\tGenomic location\tExon\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tRestriction sites\tBest ID"
+            print "Rank\tTarget sequence\tGenomic location\tExon\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
         finalOutput = []
         for cluster in listOfClusters:  ## FIX: WHY ARE THERE EMPTY CLUSTERS???
             if len(cluster) == 0:
@@ -2306,7 +2537,7 @@ def main():
         json.dump(cutcoords, cutCoord_file)
 
         info = open("%s/run.info" % args.outputDir, 'w')
-        info.write("%s\t%s\t%s\t%s\t%s\t%s\n" % ("".join(args.targets), args.genome, args.MODE, args.uniqueMethod_Hsu, args.uniqueMethod_Cong, args.guideSize))
+        info.write("%s\t%s\t%s\t%s\t%s\n" % ("".join(args.targets), args.genome, args.MODE, args.uniqueMethod_Cong, args.guideSize))
         info.close()
 
 if __name__ == '__main__':
