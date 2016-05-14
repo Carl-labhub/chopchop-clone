@@ -1,5 +1,5 @@
 # CHOPCHOP script
-#### There exists website version of this tool with specifically designed visualization of guides under <a href="chopchop.cbu.uib.no" target="_blank">chopchop.cbu.uib.no</a>
+#### There exists website version of this tool with specifically designed visualization of guides under [chopchop.cbu.uib.no](http://chopchop.cbu.uib.no) 
 
 #### About:
 CHOPCHOP is a python script that allows quick and customizable design of guide RNA. We support selecting target sites for CRISPR/Cas9, CRISPR/Cpf1 or TALEN with wide range of customization.
