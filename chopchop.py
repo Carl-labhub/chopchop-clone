@@ -37,12 +37,12 @@ from subprocess import Popen, PIPE
 ##
 
 # PATHs
-PRIMER3 = "primer3_core"
+PRIMER3 = "./primer3_core"
 BOWTIE = "bowtie/bowtie"
-TWOBITTOFA = "twoBitToFa"
-TWOBIT_INDEX_DIR = "genomes"
-BOWTIE_INDEX_DIR = "genomes"
-GENE_TABLE_INDEX_DIR = "genomes"
+TWOBITTOFA = "./twoBitToFa"
+TWOBIT_INDEX_DIR = "/path/to/twoBitToFa/indexes"
+BOWTIE_INDEX_DIR = "/path/to/bowtie/indexes"
+GENE_TABLE_INDEX_DIR = "/path/to/gene/table"
 
 # Program mode
 CRISPR = 1
@@ -770,20 +770,20 @@ def scoregRNA(seq, PAM, tail, lookup):
 def scoreChari_2015(svmInputFile, svmOutputFile, PAM, genome):
     """ Calculate score from SVM model as in Chari 2015 20-NGG or 20-NNAGAAW, only for hg19 and mm10"""
 
-    model = 'bin/models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
-    dist = 'bin/models/Hg19_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
+    model = './models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
+    dist = './models/Hg19_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
       
     if PAM == 'NGG' and genome == 'mm10':
-      model = 'bin/models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
-      dist = 'bin/models/Mm10_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
+      model = './models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
+      dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
     elif PAM == 'NNAGAAW' and genome == 'hg19':
-      model = 'bin/models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
-      dist = 'bin/models/Hg19_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
+      model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
+      dist = './models/Hg19_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
     elif PAM == 'NNAGAAW' and genome == 'mm10':
-      model = 'bin/models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
-      dist = 'bin/models/Mm10_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
+      model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
+      dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
 
-    prog = Popen("./bin/svm_light/svm_classify -v 0 %s %s %s" % (svmInputFile, model, svmOutputFile), shell=True)    
+    prog = Popen("./svm_light/svm_classify -v 0 %s %s %s" % (svmInputFile, model, svmOutputFile), shell=True)    
     prog.communicate()
 
     svmAll = open(dist,'r')
@@ -841,7 +841,7 @@ def scoreDoench_2016(seq, PAM, tail):
         return 0
 
     try:
-        with open('bin/models/Doench_2016_model_nopos.pickle', 'rb') as f:
+        with open('./models/Doench_2016_model_nopos.pickle', 'rb') as f:
                 model= pickle.load(f)
 
         model, learn_options = model
