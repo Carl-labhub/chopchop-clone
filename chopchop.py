@@ -916,8 +916,8 @@ def truncateToPROMOTER(strand, exons, indices, bp):
         return ([firstExon], [indices[0]])
     else:
         firstExon = exons[-1]
-        firstExon[2] = firstExon[1] + bp
-        firstExon[1] = firstExon[1] - bp
+        firstExon[1] = firstExon[2] - bp
+        firstExon[2] = firstExon[2] + bp
         return ([firstExon], [indices[-1]])
     
     return (exons, indices)
