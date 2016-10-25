@@ -973,16 +973,15 @@ def truncateToCoding(cdsStart, cdsEnd, exons, indices):
 
     
 def _geneLineToCoord(line, guideSize):
-
     startSplit = line[1].split(",")
     endSplit = line[2].split(",")
     
     # Remove last (empty) item in list (due to extra comma)
-    del startSplit[-1]  
-    del endSplit[-1]           
+    del startSplit[-1]
+    del endSplit[-1]            
     
     startBase = map(int, startSplit)
-    endBase = map(int, endSplit)
+    endBase = map(int, endSplit)            
 
     intronSize = [int(startBase[x+1]) - int(endBase[x]) for x in range(len(startBase)-1)]
     intronSize.append(0)
@@ -1042,27 +1041,6 @@ def geneToCoord_file(geneIN, tableFile, guideSize, index):
     # Look in genome table for gene of question
     for row in tablereader:
         if (row['name'] == geneIN):
-            found = True
-            return (_geneLineToCoord([row['chrom'], row['exonStarts'], row['exonEnds']], guideSize), row['cdsStart'], row['cdsEnd'], row['strand'])
-
-    tableR.close()        
-
-    # Error if gene doesn't exist.
-    if not found:
-        sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (geneIN, tableFile))
-        sys.exit(EXIT['GENE_ERROR'])
-
-
-def geneToCoord_UCSCfile(geneIN, tableFile, guideSize, index):    
-    """ Extracts coordinates of genomic regions from BED file to parse for suitable guide binding sites """
-
-    tableR = open(tableFile, 'rb')
-    tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
-    found = False
-
-    # Look in genome table for gene of question
-    for row in tablereader:
-        if (row['#geneName'] or row['name'] == geneIN):
             found = True
             return (_geneLineToCoord([row['chrom'], row['exonStarts'], row['exonEnds']], guideSize), row['cdsStart'], row['cdsEnd'], row['strand'])
 
@@ -1982,8 +1960,7 @@ def coordsToJson(coords, cdsStart, cdsEnd, strand):
     return newCoords
 
 
-def parseTargets(targetString, genome, use_db, use_UCSC, data, padSize, targetRegion, exonSubset, promoter_bp):
-
+def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exonSubset, promoter_bp):
     targets = []
     displayIndices = []
     visCoords = []
@@ -1991,10 +1968,9 @@ def parseTargets(targetString, genome, use_db, use_UCSC, data, padSize, targetRe
     target_strand = None
 
     pattern = re.compile("(([\.\w]+):)?([\.\,\d]+)\-([\.\,\d]+)")
-
     isCoordinate = pattern.match(targetString)
 
-    if isCoordinate:
+    if isCoordinate: 
 
         # Target specified as coordinate
         if target_strand == None:
@@ -2047,10 +2023,9 @@ def parseTargets(targetString, genome, use_db, use_UCSC, data, padSize, targetRe
             targetString = m.group(1)
             index = int(m.group(2))
 
+        ## GENE / TRANSCRIPT
         if use_db:
             (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_db(targetString, genome, data, padSize, index)
-        elif use_UCSC:
-            (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_UCSCfile(targetString, data, padSize, index)
         else:
             (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_file(targetString, data, padSize, index)
 
@@ -2272,8 +2247,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("targets", help="Target genes or regions", metavar="TARGET_REGIONS")
     parser.add_argument("-r", "--gRVD", default="NH ", dest="g_RVD", action="store_const", const="NN ",  help="Use RVD 'NN' instead of 'NH' for guanine nucleotides. 'NH' appears to be more specific than 'NN' but the choice depends on assembly kit.")
-    parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")
-    parser.add_argument("-U", "--UCSCTable", default=False, action="store_true", help="User provides a gene table for their organism downloaded from UCSC genome browser site", dest="UCSCTable") 
+    parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")   
     parser.add_argument("-e", "--exon", help="Comma separated list of exon indices. Only find sites in this subset. ", metavar="EXON_NUMBER", dest="exons")   
     parser.add_argument("-TP", "--targetPromoter", default=200, type=int, help="how many bp to target upstream and downstream of TSS")
     parser.add_argument("-G", "--genome", default="danRer7", metavar="GENOME", help="The genome to search.") 
@@ -2306,6 +2280,7 @@ def main():
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
     parser.add_argument("--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015","G_20"], help="Scoring used for Cas9 and Nickase. Default is G_20")
+    parser.add_argument("--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
     args = parser.parse_args()
 
     # Add TALEN length
@@ -2372,18 +2347,9 @@ def main():
         cdb = connect_db(args.database)
         db = cdb.cursor()
         use_db = True
-        use_UCSC = False
-        
-    elif args.UCSCTable:
-        db = "%s/%s.UCSC_table" % (GENE_TABLE_INDEX_DIR, args.genome)
-        use_UCSC = True
-        use_db = False
-        
     else:
         db = "%s/%s.gene_table" % (GENE_TABLE_INDEX_DIR, args.genome)
         use_db = False
-        use_UCSC = False
-    
 
     ## Create output directory if it doesn't exist
     if not os.path.isdir(args.outputDir):
@@ -2393,7 +2359,7 @@ def main():
     if args.fasta:
         sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
     else:
-        targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, use_UCSC, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
+        targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
         sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome)
 
     ## Converts genomic coordinates to fasta file of all possible 16-mers
@@ -2405,6 +2371,11 @@ def main():
     # Run bowtie and get results
     bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), BOWTIE_INDEX_DIR, args.genome, int(args.maxMismatches))
     results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, args.scoringMethod, args.genome)  # TALENS: MAKE_PAIRS + CLUSTER
+
+    if args.rm1perfOff and args.fasta:
+        for guide in results:
+            if guide.offTargetsMM[0] > 0:
+                guide.score = guide.score - SINGLE_OFFTARGET_SCORE[0]
 
     if args.scoringMethod == "CHARI_2015" and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10"):
         try:
@@ -2456,6 +2427,14 @@ def main():
         if (not len(pairs)):
             sys.stderr.write("No TALEN pairs could be generated for this region.\n")
             sys.exit(EXIT['GENE_ERROR'])
+
+        if args.rm1perfOff and args.fasta:
+            for pair in pairs:
+                if pair.diffStrandOffTarget > 0:
+                     pair.score = pair.score - SCORE["OFFTARGET_PAIR_DIFF_STRAND"]
+                if pair.sameStrandOffTarget > 0:
+                     pair.score = pair.score - SCORE["OFFTARGET_PAIR_SAME_STRAND"]
+
         cluster, results = clusterPairs(pairs)
         
     elif args.MODE == NICKASE:
@@ -2464,6 +2443,12 @@ def main():
         if (not len(pairs)):
             sys.stderr.write("No Cas9 nickase pairs could be generated for this region.\n")
             sys.exit(EXIT['GENE_ERROR'])
+
+        if args.rm1perfOff and args.fasta:
+            for pair in pairs:
+                if pair.diffStrandOffTarget > 0:
+                     pair.score = pair.score - SCORE["OFFTARGET_PAIR_DIFF_STRAND"]
+
         cluster, results = clusterPairs(pairs)
 
     # Sorts pairs according to score/penalty and cluster 
