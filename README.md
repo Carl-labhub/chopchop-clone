@@ -31,7 +31,7 @@ CHOPCHOP is a python script that allows quick and customizable design of guide R
 - [Make bowtie compressed version of genome](http://bowtie-bio.sourceforge.net/manual.shtml#the-bowtie-build-indexer) using your new *.fasta file
 - In script chopchop.py (lines 43-45) set paths to your *.2bit genome files, bowtie (*.ewbt) genome files and *.gene_table files
 - Make sure all these files and programs have proper access rights
-- Set paths to the downloaded genomes in the main script file ```chopchop.py```, right after imports
+- Have fun using CHOPCHOP as a script
 
 #### Run example:
 List gRNAs using default values for CRIPR/Cas9 for chr10:1000000-1001000, with genome named danRer10 and put results in directory temp:
@@ -77,7 +77,7 @@ List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome n
   ```
   ./control_guides.py --help
   ```  
-  
+
   ```
   ./chopchop_query.py --help
   ```
