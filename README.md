@@ -46,8 +46,8 @@ List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome n
   ./chopchop.py -G hg19 -o temp NM_144906
   ```
 
-#### Additionally we include:
-```control_guides.py``` - script to find CRSIPR Cas9/Cpf1 guides that do not map to selected genome, follow specific GC content, have no self-complementarity or complementarity to the backbone and are filtered for supplied list of restriction sites
+#### Additionally we include:  
+```control_guides.py``` - script to find CRSIPR Cas9/Cpf1 guides that do not map to selected genome, follow specific GC content, have no self-complementarity or complementarity to the backbone and are filtered for supplied list of restriction sites  
 
   ```
   ./control_guides.py /path/to/bowtie/index/of/the/genome --PAM TTN --type Cas9 --how_many 400 --g_len 20 --restrict BbsI,EcoRI
@@ -56,12 +56,12 @@ List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome n
 ```chopchop_query.py``` - script to find guides using CHOPCHOP for a list of genes or all genes in the genePred file. You can use all chopchop.py script options normally, they will be passed along in each query. 
   
 
-  For two selected genes:
+  For two selected genes:  
   ```
   ./chopchop_query.py --gene_names NM_144906,NM_001265875 -G hg19 -o temp2
   ```
 
-  For all genes in genePred table, with Cpf1 option:
+  For all genes in genePred table, with Cpf1 option:  
   ```
   ./chopchop_query.py --genePred /full/path/to/genPred/hg19.gene_table -G hg19 -o temp -T 3
   ```
@@ -72,10 +72,12 @@ List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome n
 #### Explore different options of our CHOPCHOP scripts:
   ```
   ./chopchop.py --help
-  ```
+  ```  
+
   ```
   ./control_guides.py --help
-  ```
+  ```  
+  
   ```
   ./chopchop_query.py --help
   ```
