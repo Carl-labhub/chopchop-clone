@@ -40,9 +40,9 @@ from subprocess import Popen, PIPE
 PRIMER3 = "./primer3_core"
 BOWTIE = "bowtie/bowtie"
 TWOBITTOFA = "./twoBitToFa"
-TWOBIT_INDEX_DIR = "/path/to/twoBitToFa/indexes"
-BOWTIE_INDEX_DIR = "/path/to/bowtie/indexes"
-GENE_TABLE_INDEX_DIR = "/path/to/gene/table"
+TWOBIT_INDEX_DIR = "/your/full/path/to/2bit_folder"
+BOWTIE_INDEX_DIR = "/your/full/path/to/ebwt_folder"
+GENE_TABLE_INDEX_DIR = "/your/full/path/to/genePred_folder"
 
 # Program mode
 CRISPR = 1
@@ -1040,7 +1040,7 @@ def geneToCoord_file(geneIN, tableFile, guideSize, index):
 
     # Look in genome table for gene of question
     for row in tablereader:
-        if (row['name'] == geneIN):
+        if (row['name'] == geneIN or row['name2'] == geneIN):
             found = True
             return (_geneLineToCoord([row['chrom'], row['exonStarts'], row['exonEnds']], guideSize), row['cdsStart'], row['cdsEnd'], row['strand'])
 

@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import os
 import argparse
 import random
@@ -53,8 +55,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("genome", type=str,
                         help="Path to the bowtie index of the genome to search for off-targets.")
-    parser.add_argument("--type", type=int, default=1,
-                        choices=[1, 3], help="Type of CRISPR: 1 - for Cas9, 3 - for Cpf1")
+    parser.add_argument("--type", type=str, default="Cas9",
+                        choices=["Cas9", "Cpf1"], help="Type of CRISPR.")
     parser.add_argument("--PAM", type=str, default="NGG",
                         help="The Protospacer Adjacent Motif where N is allowed eg. NGG")
     parser.add_argument("--g_len", type=int, default=20,
@@ -66,9 +68,9 @@ def main():
     parser.add_argument("--GC_MIN", type=int, default=40,
                         help="Minimum acceptable value for GC percent eg. 40")
     parser.add_argument("--backbone", type=str, default="",
-                        help="Used when calculating complementarity of the guide to the backbone region. When empty self/backbone complementarity is not calculated. Can be coma separated string eg. AGGCTAGTCCGT,ATGCTGGAA")
+                        help="Used when calculating complementarity of the guide to the backbone region. When empty self/backbone complementarity is not calculated. Can be comma separated string eg. AGGCTAGTCCGT,ATGCTGGAA")
     parser.add_argument("--restrict", type=str, default="",
-                        help="Guides will be filtered for supplied coma separated list of restriction enzymes eg. BbsI,EcoRI or by default not filtered at all.")
+                        help="Guides will be filtered for supplied comma separated list of restriction enzymes eg. BbsI,EcoRI or by default not filtered at all.")
     args = parser.parse_args()
 
     dir = os.path.dirname(__file__)
@@ -85,7 +87,7 @@ def main():
             PAM[i] = "".join(random.choice("ACTG"))
         PAM = "".join(PAM)
 
-        if args.type == 1:
+        if args.type == "Cas9":
             seq = "".join(random.choice("ACTG") for i in range(args.g_len)) + PAM
         else:
             seq = PAM + "".join(random.choice("ACTG") for i in range(args.g_len))
@@ -108,7 +110,7 @@ def main():
 
         # Complementarity
         if args.backbone != "":
-            if args.type == 1:
+            if args.type == "Cas9":
                 seq_noPAM = seq[len(PAM):]
             else:
                 seq_noPAM = seq[:-len(PAM)]

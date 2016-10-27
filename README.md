@@ -8,19 +8,20 @@ CHOPCHOP is a python script that allows quick and customizable design of guide R
 #### Prerequisites:
 - [Python](https://www.python.org/download/) - We operate on 2.7
 - [Biopython module](http://biopython.org/wiki/Download "Biopython module download")
-- Python libraries: pandas, numpy, pickle, skcit-learn==0.16.1, scipy 
+- Python libraries: pandas, numpy, pickle, scipy
+- Additionally Python library skcit-learn==0.16.1 if you want to make use of ```--scoringMethod Doench_2016```, otherwise latest version is ok. This older version is required because models from Doench et al. 2016 have been saved with this particular version.
 - [Bowtie](http://sourceforge.net/projects/bowtie-bio/files/bowtie/1.0.1/ "Bowtie download") - included, but may require compilation for your operating system
 - [twoBitToFa](http://hgdownload.soe.ucsc.edu/admin/exe/ "twoBitToFa download") - included
 - [svm_light](http://svmlight.joachims.org/ "svm_light download") - included, but may require compilation for your operating system, necessary only with option ```--scoringMethod CHARI_2015```
 - [primer3](http://primer3.sourceforge.net/releases.php "primer3 download") - included
-- CHOPCHOP script will need a [table](http://genome.ucsc.edu/cgi-bin/hgTables?command=start) to look up genomic cooridinates
+- CHOPCHOP script will need a [table](http://genome.ucsc.edu/cgi-bin/hgTables?command=start) to look up genomic coordinates if you want to supply names of the genes rather than coordinates. To get example genePred table:
     * Select organism and assembly 
     * Select group: Genes and Gene Predictions
     * Select track: RefSeq Genes 
     * Select table: refFlat 
     * Select region: genome
     * Select output format: all fields from selected table
-    * Fill name with extension ".UCSC_table' eg. danRer10.UCSC_table
+    * Fill name with extension ".gene_table' eg. danRer10.gene_table
     * Get output
 - [Download](http://hgdownload.soe.ucsc.edu/downloads.html) *.2bit compressed genome
     * Select organism in complete annotation sets section
@@ -28,8 +29,8 @@ CHOPCHOP is a python script that allows quick and customizable design of guide R
     * download *.2bit file
 - Create fasta version of genome by running twoBitToFa on *.2bit file
 - [Make bowtie compressed version of genome](http://bowtie-bio.sourceforge.net/manual.shtml#the-bowtie-build-indexer) using your new *.fasta file
-- Create a genomes directory in chopchop directory and put there: *.2bit genome file, bowtie (*.ewbt) genome files and *.UCSC_table file
-- Make sure all these files and programs have proper acces rights
+- In script chopchop.py (lines 43-45) set paths to your *.2bit genome files, bowtie (*.ewbt) genome files and *.gene_table files
+- Make sure all these files and programs have proper access rights
 - Set paths to the downloaded genomes in the main script file ```chopchop.py```, right after imports
 
 #### Run example:
@@ -39,7 +40,42 @@ List gRNAs using default values for CRIPR/Cas9 for chr10:1000000-1001000, with g
   ./chopchop.py -G danRer10 -o temp chr10:1000000-1001000
   ```
 
-#### Explore different options of CHOPCHOP script:
+List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome named hg19 and put results in directory temp:
+  
+  ```
+  ./chopchop.py -G hg19 -o temp NM_144906
+  ```
+
+#### Additionally we include:
+```control_guides.py``` - script to find CRSIPR Cas9/Cpf1 guides that do not map to selected genome, follow specific GC content, have no self-complementarity or complementarity to the backbone and are filtered for supplied list of restriction sites
+
+  ```
+  ./control_guides.py /path/to/bowtie/index/of/the/genome --PAM TTN --type Cas9 --how_many 400 --g_len 20 --restrict BbsI,EcoRI
+  ```
+
+```chopchop_query.py``` - script to find guides using CHOPCHOP for a list of genes or all genes in the genePred file. You can use all chopchop.py script options normally, they will be passed along in each query. 
+  
+
+  For two selected genes:
+  ```
+  ./chopchop_query.py --gene_names NM_144906,NM_001265875 -G hg19 -o temp2
+  ```
+
+  For all genes in genePred table, with Cpf1 option:
+  ```
+  ./chopchop_query.py --genePred /full/path/to/genPred/hg19.gene_table -G hg19 -o temp -T 3
+  ```
+  
+  
+
+
+#### Explore different options of our CHOPCHOP scripts:
   ```
   ./chopchop.py --help
+  ```
+  ```
+  ./control_guides.py --help
+  ```
+  ```
+  ./chopchop_query.py --help
   ```
