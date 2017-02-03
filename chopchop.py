@@ -505,7 +505,7 @@ class Cas9(Guide):
 
         if self.scoringMethod not in ["CHARI_2015", "DOENCH_2016", "ALL"]:
             self.CoefficientsScore[self.scoringMethod] = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[self.scoringMethod])
-            self.score = self.score - self.CoefficientsScore * SCORE['COEFFICIENTS']
+            self.score = self.score - self.CoefficientsScore[self.scoringMethod] * SCORE['COEFFICIENTS']
 
         if self.scoringMethod == "ALL":
             for met in ["XU_2015", "DOENCH_2014", "MORENO_MATEOS_2015", "G_20"]:
@@ -834,14 +834,14 @@ def scoreChari_2015(svmInputFile, svmOutputFile, PAM, genome):
     # first through go all scores and get the max and min
     allData = []
     for line in svmAll:
-      line = line.rstrip('\r\n')
-      allData.append(float(line))
+        line = line.rstrip('\r\n')
+        allData.append(float(line))
     svmAll.close()
 
     scoreArray = []
     for line in svmThis:
-      line = line.rstrip('\r\n')
-      scoreArray.append(float(line))
+        line = line.rstrip('\r\n')
+        scoreArray.append(float(line))
 
     return [ss.percentileofscore(allData, i) for i in scoreArray]
 
@@ -2515,7 +2515,7 @@ def main():
 
     if args.MODE == CRISPR:
         common_header = "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
-        if args..scoringMethod == "ALL":
+        if args.scoringMethod == "ALL":
             print(common_header + "\tXU_2015\tDOENCH_2014\tDOENCH_2016\tMORENO_MATEOS_2015\tCHARI_2015\tG_20")
         else:
             print(common_header + "\tEfficiency")
