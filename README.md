@@ -9,10 +9,10 @@ CHOPCHOP is a python script that allows quick and customizable design of guide R
 - [Python](https://www.python.org/download/) - We operate on 2.7
 - [Biopython module](http://biopython.org/wiki/Download "Biopython module download")
 - Python libraries: pandas, numpy, pickle, scipy
-- Additionally Python library skcit-learn==0.16.1 if you want to make use of ```--scoringMethod Doench_2016```, otherwise latest version is ok. This older version is required because models from Doench et al. 2016 have been saved with this particular version.
+- Additionally Python library [skcit-learn==0.16.1](https://pypi.python.org/pypi/scikit-learn/0.16.1#downloads) if you want to make use of ```--scoringMethod Doench_2016```, otherwise latest version is ok. This older version is required because models from Doench et al. 2016 have been saved with this particular version.
 - [Bowtie](http://sourceforge.net/projects/bowtie-bio/files/bowtie/1.0.1/ "Bowtie download") - included, but may require compilation for your operating system
 - [twoBitToFa](http://hgdownload.soe.ucsc.edu/admin/exe/ "twoBitToFa download") - included
-- [svm_light](http://svmlight.joachims.org/ "svm_light download") - included, but may require compilation for your operating system, necessary only with option ```--scoringMethod CHARI_2015```
+- [svm_light](http://svmlight.joachims.org/ "svm_light download") - included, but may require compilation for your operating system, necessary only with option ```--scoringMethod CHARI_2015```, only working for mm10 and hg19 genomes with NGG or NNAGAAW PAMs
 - [primer3](http://primer3.sourceforge.net/releases.php "primer3 download") - included
 - CHOPCHOP script will need a [table](http://genome.ucsc.edu/cgi-bin/hgTables?command=start) to look up genomic coordinates if you want to supply names of the genes rather than coordinates. To get example genePred table:
     * Select organism and assembly 

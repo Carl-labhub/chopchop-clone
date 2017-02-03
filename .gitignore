@@ -2,4 +2,5 @@
 /genomes/*
 .project
 .pydevproject
+featurization.pyc
 chopchop.pyc
