@@ -321,6 +321,7 @@ class Guide(object):
         self.targetSize = guideSize
         self.cluster = -1
         self.score = 0
+        self.ALL_scores = [0, 0, 0, 0, 0, 0]
 
         # Off target count
         self.offTargetsMM = [0] * 4
@@ -490,18 +491,59 @@ class Guide(object):
 class Cas9(Guide):
     def __init__(self, *args, **kwargs):
         super(Cas9, self).__init__(*args, **kwargs)
-        if self.scoringMethod == "CHARI_2015":
-            self.CoefficientsScore = 0
-        elif self.scoringMethod == "DOENCH_2016":
-            self.CoefficientsScore = scoreDoench_2016(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim)
-            self.score = self.score - self.CoefficientsScore * SCORE['COEFFICIENTS']
-        else:
-            self.CoefficientsScore = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[self.scoringMethod])
+        self.CoefficientsScore = {"XU_2015": 0,
+                                  "DOENCH_2014": 0,
+                                  "DOENCH_2016": 0,
+                                  "MORENO_MATEOS_2015": 0,
+                                  "CHARI_2015": 0,
+                                  "G_20": 0}
+
+        if self.scoringMethod in ["DOENCH_2016", "ALL"]:
+            self.CoefficientsScore["DOENCH_2016"] = scoreDoench_2016(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim)
+            if self.scoringMethod == "DOENCH_2016":
+                self.score = self.score - self.CoefficientsScore["DOENCH_2016"] * SCORE['COEFFICIENTS']
+
+        if self.scoringMethod not in ["CHARI_2015", "DOENCH_2016", "ALL"]:
+            self.CoefficientsScore[self.scoringMethod] = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[self.scoringMethod])
             self.score = self.score - self.CoefficientsScore * SCORE['COEFFICIENTS']
 
+        if self.scoringMethod == "ALL":
+            for met in ["XU_2015", "DOENCH_2014", "MORENO_MATEOS_2015", "G_20"]:
+                self.CoefficientsScore[met] = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[met])
+    
     def __str__(self):
         self.sort_offTargets()
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.offTargetsMM[3], self.CoefficientsScore)
+        if self.scoringMethod == "ALL":
+            return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f" % (self.strandedGuideSeq, 
+                                                                                                        self.chrom, 
+                                                                                                        self.start, 
+                                                                                                        self.exonNum, 
+                                                                                                        self.strand, 
+                                                                                                        self.GCcontent, 
+                                                                                                        self.folding, 
+                                                                                                        self.offTargetsMM[0], 
+                                                                                                        self.offTargetsMM[1], 
+                                                                                                        self.offTargetsMM[2], 
+                                                                                                        self.offTargetsMM[3], 
+                                                                                                        self.CoefficientsScore["XU_2015"],
+                                                                                                        self.CoefficientsScore["DOENCH_2014"],
+                                                                                                        self.CoefficientsScore["DOENCH_2016"],
+                                                                                                        self.CoefficientsScore["MORENO_MATEOS_2015"],
+                                                                                                        self.CoefficientsScore["CHARI_2015"],
+                                                                                                        self.CoefficientsScore["G_20"])
+        else:
+            return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq, 
+                                                                          self.chrom, 
+                                                                          self.start, 
+                                                                          self.exonNum, 
+                                                                          self.strand, 
+                                                                          self.GCcontent, 
+                                                                          self.folding, 
+                                                                          self.offTargetsMM[0], 
+                                                                          self.offTargetsMM[1], 
+                                                                          self.offTargetsMM[2], 
+                                                                          self.offTargetsMM[3], 
+                                                                          self.CoefficientsScore[self.scoringMethod])
     
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):
         if replace5prime:
@@ -2279,7 +2321,7 @@ def main():
     parser.add_argument("-O", "--limitPrintResults", default=1000, dest="limitPrintResults", help="The number of results to print extended information for. Default 1000.")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
-    parser.add_argument("--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015","G_20"], help="Scoring used for Cas9 and Nickase. Default is G_20")
+    parser.add_argument("--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
     parser.add_argument("--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
     args = parser.parse_args()
 
@@ -2377,7 +2419,7 @@ def main():
             if guide.offTargetsMM[0] > 0:
                 guide.score = guide.score - SINGLE_OFFTARGET_SCORE[0]
 
-    if args.scoringMethod == "CHARI_2015" and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10"):
+    if (args.scoringMethod == "CHARI_2015" or args.scoringMethod == "ALL") and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10"):
         try:
             #make file to score
             svmInputFile = '%s/chari_score.SVMInput.txt' % args.outputDir
@@ -2413,8 +2455,9 @@ def main():
             newScores = scoreChari_2015(svmInputFile, svmOutputFile, args.PAM, args.genome)
 
             for i, guide in enumerate(results):
-                guide.CoefficientsScore = newScores[i]
-                guide.score = guide.score - (guide.CoefficientsScore/100) * SCORE['COEFFICIENTS']
+                guide.CoefficientsScore["CHARI_2015"] = newScores[i]
+                if args.scoringMethod == "CHARI_2015":
+                    guide.score = guide.score - (guide.CoefficientsScore["CHARI_2015"]/100) * SCORE['COEFFICIENTS']
         except:
             pass
 
@@ -2471,7 +2514,11 @@ def main():
     resultCoords = []
 
     if args.MODE == CRISPR:
-        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3\tEfficiency"
+        common_header = "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
+        if args..scoringMethod == "ALL":
+            print(common_header + "\tXU_2015\tDOENCH_2014\tDOENCH_2016\tMORENO_MATEOS_2015\tCHARI_2015\tG_20")
+        else:
+            print(common_header + "\tEfficiency")
         for i in range(len(sortedOutput)):
             print "%s\t%s" % (i+1, sortedOutput[i])            
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
