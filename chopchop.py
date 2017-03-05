@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/env python2.7
 
 #####################
 ##
@@ -15,7 +15,6 @@ import string
 import argparse
 import pickle
 import pandas
-import sklearn
 import numpy
 import featurization as feat
 import scipy.stats as ss
@@ -24,9 +23,8 @@ from collections import defaultdict
 from Bio import SeqIO, SeqFeature, SeqRecord
 from Bio.Restriction import Analysis, RestrictionBatch
 from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 from Bio.Alphabet.IUPAC import IUPACAmbiguousDNA
-from Bio.SeqFeature import SeqFeature, FeatureLocation
+from Bio.SeqFeature import FeatureLocation
 from operator import itemgetter, attrgetter
 from subprocess import Popen, PIPE
 
@@ -816,14 +814,14 @@ def scoreChari_2015(svmInputFile, svmOutputFile, PAM, genome):
     dist = './models/Hg19_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
       
     if PAM == 'NGG' and genome == 'mm10':
-      model = './models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
-      dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
+        model = './models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
+        dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
     elif PAM == 'NNAGAAW' and genome == 'hg19':
-      model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
-      dist = './models/Hg19_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
+        model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
+        dist = './models/Hg19_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
     elif PAM == 'NNAGAAW' and genome == 'mm10':
-      model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
-      dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
+        model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
+        dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
 
     prog = Popen("./svm_light/svm_classify -v 0 %s %s %s" % (svmInputFile, model, svmOutputFile), shell=True)    
     prog.communicate()
@@ -856,21 +854,21 @@ def concatenate_feature_sets(feature_sets):
     '''
     assert feature_sets != {}, "no feature sets present"
     F = feature_sets[feature_sets.keys()[0]].shape[0]
-    for set in feature_sets.keys():
-        F2 = feature_sets[set].shape[0]
-        assert F == F2, "not same # individuals for features %s and %s" % (feature_sets.keys()[0], set)
+    for fset in feature_sets.keys():
+        F2 = feature_sets[fset].shape[0]
+        assert F == F2, "not same # individuals for features %s and %s" % (feature_sets.keys()[0], fset)
 
     N = feature_sets[feature_sets.keys()[0]].shape[0]
     inputs = numpy.zeros((N, 0))
     feature_names = []
     dim = {}
     dimsum = 0
-    for set in feature_sets.keys():
-        inputs_set = feature_sets[set].values
-        dim[set] = inputs_set.shape[1]
-        dimsum += dim[set]
+    for fset in feature_sets.keys():
+        inputs_set = feature_sets[fset].values
+        dim[fset] = inputs_set.shape[1]
+        dimsum += dim[fset]
         inputs = numpy.hstack((inputs, inputs_set))
-        feature_names.extend(feature_sets[set].columns.tolist())
+        feature_names.extend(feature_sets[fset].columns.tolist())
 
     return inputs, dim, dimsum, feature_names
 
@@ -891,7 +889,7 @@ def scoreDoench_2016(seq, PAM, tail):
         Xdf = pandas.DataFrame(columns=[u'30mer', u'Strand'], data=[[''.join((seq[-24:], PAM, tail[:3])), 'NA']])
         gene_position = pandas.DataFrame(columns=[u'Percent Peptide', u'Amino Acid Cut position'], data=[[-1, -1]])
         feature_sets = feat.featurize_data(Xdf, learn_options, pandas.DataFrame(), gene_position)
-        inputs, dim, dimsum, feature_names = concatenate_feature_sets(feature_sets)
+        inputs = concatenate_feature_sets(feature_sets)[0]
         return model.predict(inputs)[0]
     except:
         return 0
@@ -2474,9 +2472,9 @@ def main():
         if args.rm1perfOff and args.fasta:
             for pair in pairs:
                 if pair.diffStrandOffTarget > 0:
-                     pair.score = pair.score - SCORE["OFFTARGET_PAIR_DIFF_STRAND"]
+                    pair.score = pair.score - SCORE["OFFTARGET_PAIR_DIFF_STRAND"]
                 if pair.sameStrandOffTarget > 0:
-                     pair.score = pair.score - SCORE["OFFTARGET_PAIR_SAME_STRAND"]
+                    pair.score = pair.score - SCORE["OFFTARGET_PAIR_SAME_STRAND"]
 
         cluster, results = clusterPairs(pairs)
         
@@ -2490,7 +2488,7 @@ def main():
         if args.rm1perfOff and args.fasta:
             for pair in pairs:
                 if pair.diffStrandOffTarget > 0:
-                     pair.score = pair.score - SCORE["OFFTARGET_PAIR_DIFF_STRAND"]
+                    pair.score = pair.score - SCORE["OFFTARGET_PAIR_DIFF_STRAND"]
 
         cluster, results = clusterPairs(pairs)
 
