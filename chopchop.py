@@ -33,14 +33,16 @@ from subprocess import Popen, PIPE
 ##
 ## Global variables
 ##
+ISOFORMS = False
 
 # PATHs
 PRIMER3 = "./primer3_core"
 BOWTIE = "bowtie/bowtie"
 TWOBITTOFA = "./twoBitToFa"
-TWOBIT_INDEX_DIR = "/your/full/path/to/2bit_folder"
-BOWTIE_INDEX_DIR = "/your/full/path/to/ebwt_folder"
-GENE_TABLE_INDEX_DIR = "/your/full/path/to/genePred_folder"
+TWOBIT_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+BOWTIE_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+ISOFORMS_INDEX_DIR = "/home/ai/Projects/c2c2"
+GENE_TABLE_INDEX_DIR = "/home/ai/Projects/c2c2"
 
 # Program mode
 CRISPR = 1
@@ -79,7 +81,6 @@ NICKASE_DEFAULT =  {"GUIDE_SIZE" : 20,
                     "MAX_MISMATCHES" : 3,
                     "SCORE_GC" : True,
                     "SCORE_FOLDING" : True}
-
 
 TALEN_OFF_TARGET_MIN = 28
 TALEN_OFF_TARGET_MAX = 42
@@ -292,10 +293,17 @@ class Guide(object):
     """ This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
     "sort_offTargets" applies to just the Tale class """
 
-    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, backbone_regions, PAM, replace5prime=None, scoringMethod=None, genome=None):        
+    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, 
+                 backbone_regions, PAM, replace5prime=None, scoringMethod=None, 
+                 genome=None, gene=None, isoform=None, gene_isoforms=None):
         
         self.scoringMethod = scoringMethod
         self.genome = genome
+        self.gene = gene
+        self.isoform = isoform
+        self.gene_isoforms = gene_isoforms
+        self.offTargetsIso = {0: set(), 1: set(), 2: set(), 3: set()}
+        self.conserved = False # conservation of guide across all isoforms
         self.PAM = PAM
         # From the guide's name we can get the chromosome
         self.flagSum = flagSum
@@ -348,7 +356,7 @@ class Guide(object):
         self.guideSeq = guideSeq
 
         # Record which strand the guide is on
-        if flagSum == "16":
+        if flagSum == "16" or ISOFORMS: # due to reverse complementing before alignments
             self.strandedGuideSeq = guideSeq
             if self.strand is None:
                 self.strand = '+'
@@ -402,7 +410,7 @@ class Guide(object):
                 self.score += SCORE['CRISPR_BAD_GC']
 
 
-    def addOffTarget(self, hit, checkMismatch, maxOffTargets, countMMPos):        
+    def addOffTarget(self, hit, maxOffTargets, countMMPos):        
         """ Add off target hits (and not original hit) to list for each guide RNA """    
 
         hit_id = "%s:%s" % (hit.chrom, hit.start)
@@ -410,7 +418,12 @@ class Guide(object):
         mm_pattern = re.compile('NM:i:(\d+)')
        
         # If the hit is identical to the guide coord it is the original correct hit
-        if self.chrom == hit.chrom and self.start == hit.start:
+        if self.chrom == hit.chrom and self.start == hit.start: # never true for isoforms
+            # This is the original/main hit
+            self.correct_hit = hit
+            return
+        
+        if ISOFORMS and self.isoform == hit.chrom and self.strandedGuideSeq == hit.matchSeq:
             # This is the original/main hit
             self.correct_hit = hit
             return
@@ -419,34 +432,38 @@ class Guide(object):
         if self.offTarget_hash.has_key(hit_id):  
             return
 
-        # Reverse  count+allowed arrays if on the reverse strand
-        # if checkMismatch and hit.flagSum != self.flagSum:
-        if checkMismatch and hit.flagSum == 0:
+        # Reverse count+allowed arrays if on the reverse strand
+        if hit.flagSum == 0 and not ISOFORMS:
             countMMPos = countMMPos[::-1]
 
-        #if hit.start == 13080466:
-        #    sys.stderr.write("ALL  [%s]\n" % countMMPos)
+        self.offTarget_hash[hit_id] = hit         
+        MMs = get_mismatch_pos(hit.mismatchPos[5:])
 
-        self.offTarget_hash[hit_id] = hit
-        if checkMismatch:            
-            MMs = get_mismatch_pos(hit.mismatchPos[5:])
+        for mm in MMs:
+            if not countMMPos[mm]:
+                del(self.offTarget_hash[hit_id])
+                return
 
-            for mm in MMs:
-                if not countMMPos[mm]:
-                    del(self.offTarget_hash[hit_id])
-                    return
-
-                elif not countMMPos[mm]:
-                    nmiss += 1
-
+            elif not countMMPos[mm]:
+                nmiss += 1
 
         # Calculate score
         for opt in hit.opts:
             m = mm_pattern.match(opt)
             if m:
                 mm = int(m.group(1)) - nmiss
-                self.offTargetsMM[mm] += 1
-                self.score += SINGLE_OFFTARGET_SCORE[mm]
+                
+                # ugly repeat to save time from iterating all isoforms 
+                if ISOFORMS: 
+                    if hit.chrom in self.gene_isoforms: # and hit.chrom not in self.offTargetsIso[mm]:
+                        self.offTargetsIso[mm].add(hit.chrom)
+                        # don't count/score isoform mismatches but display which isoforms have them
+                    else: 
+                        self.offTargetsMM[mm] += 1
+                        self.score += SINGLE_OFFTARGET_SCORE[mm]
+                else: 
+                    self.offTargetsMM[mm] += 1
+                    self.score += SINGLE_OFFTARGET_SCORE[mm]
                 
             if opt == "XM:i:" + str(maxOffTargets):  
                 self.score += SCORE['MAX_OFFTARGETS']                
@@ -456,6 +473,7 @@ class Guide(object):
                 self.offTargetsMM[3] += maxOffTargets
 
         self.offTargets_sorted = False
+
 
     def numOffTargets(self):
         """ Returns the number of off-target hits for each guide """
@@ -476,7 +494,21 @@ class Guide(object):
 
     def __str__(self):
         self.sort_offTargets()
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, self.strand, self.GCcontent, self.folding, self.offTargetsMM[0], self.offTargetsMM[1], self.offTargetsMM[2], self.offTargetsMM[3])
+        if ISOFORMS:
+            return "%s\t%s:%s\t%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, 
+                                                                                            self.chrom, self.start, self.exonNum, 
+                                                                                            self.gene, self.isoform,
+                                                                                            self.GCcontent, self.folding, 
+                                                                                            self.offTargetsMM[0], self.offTargetsMM[1], 
+                                                                                            self.offTargetsMM[2], self.offTargetsMM[3], 
+                                                                                            self.conserved, (",").join(set(self.offTargetsIso[0])), 
+                                                                                            (",").join(set(self.offTargetsIso[1])), 
+                                                                                            (",").join(set(self.offTargetsIso[2])), 
+                                                                                            (",").join(set(self.offTargetsIso[3])))
+        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, 
+                                                                self.strand, self.GCcontent, self.folding, 
+                                                                self.offTargetsMM[0], self.offTargetsMM[1], 
+                                                                self.offTargetsMM[2], self.offTargetsMM[3])
                   
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -1025,7 +1057,7 @@ def _geneLineToCoord(line, guideSize):
 
     intronSize = [int(startBase[x+1]) - int(endBase[x]) for x in range(len(startBase)-1)]
     intronSize.append(0)
-           
+    
     return map(lambda x : [line[0], x[0], x[1], x[2]], zip(startBase, endBase ,intronSize))
 
 
@@ -1066,32 +1098,53 @@ def geneToCoord_db(gene, organism, db, guideSize, index):
         index = 1
 
     for i in range(index):
-        line = db.fetchone()                
+        line = db.fetchone()
 
     return (_geneLineToCoord(line, guideSize), line[4], line[5], line[6])
 
 
-def geneToCoord_file(geneIN, tableFile, guideSize, index):    
+def geneToCoord_file(geneIN, tableFile, guideSize):    
     """ Extracts coordinates of genomic regions to parse for suitable guide binding sites """
 
     tableR = open(tableFile, 'rb')
     tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
-    found = False
 
     # Look in genome table for gene of question
     for row in tablereader:
         if (row['name'] == geneIN or row['name2'] == geneIN):
-            found = True
-            return (_geneLineToCoord([row['chrom'], row['exonStarts'], row['exonEnds']], guideSize), row['cdsStart'], row['cdsEnd'], row['strand'])
-
-    tableR.close()        
+            line = [row['chrom'], row['exonStarts'], row['exonEnds'], row['cdsStart'], row['cdsEnd'], row['strand']]
+            break
+    
+    tableR.close()
+    return (_geneLineToCoord(line[:3], guideSize), line[3], line[4], line[5])
 
     # Error if gene doesn't exist.
-    if not found:
-        sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (geneIN, tableFile))
-        sys.exit(EXIT['GENE_ERROR'])
+    sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (geneIN, tableFile))
+    sys.exit(EXIT['GENE_ERROR'])
 
-
+def geneIsoforms(isoform, tableFile):
+    
+    tableR = open(tableFile, 'rb')
+    tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
+    gene_isoforms = set()
+    gene = None
+    
+    for row in tablereader:
+        if row['name'] == isoform:
+            gene = row['name2']
+            break
+    
+    tableR.close()
+    tableR = open(tableFile, 'rb')
+    tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
+    for row in tablereader:
+        if row['name2'] == gene:
+            gene_isoforms.add(row['name'])
+    tableR.close()
+    
+    return gene, isoform, gene_isoforms
+    
+    
 def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, indexDir, genome):
     """ Extracts the sequence corresponding to genomic coordinates from a FASTA file """
 
@@ -1159,12 +1212,17 @@ def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets,
 
     bowtieResultsFile = '%s/output.sam' % outputDir
 
-    if uniqueMethod_Cong:
+    if uniqueMethod_Cong and not ISOFORMS: #When ISOFORMS dna string is not reverse complemented and Cong can't be used
         # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the -n option. Outside of that seed, up to 2 mismatches are searched. 
         # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 3 mismatches
-        command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, (PAMlength + 11), maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
+        command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, (PAMlength + 11), maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
     else:
-        command = "%s -v %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s 2> %s/bowtie.err" % (BOWTIE, maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile, outputDir)
+        command = "%s -v %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
+    
+    if ISOFORMS: # When ISFORMS we don't check reverse complement 
+        command = command + "--norc "
+    
+    command = command + "2> %s/bowtie.err" % (outputDir)
     
     prog = Popen(command, shell=True)
     prog.wait()
@@ -1176,7 +1234,9 @@ def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets,
     return bowtieResultsFile
 
 
-def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM, scoringMethod=None, genome=None):
+def parseBowtie(guideClass, bowtieResultsFile, displayIndices, targets, scoreGC, scoreSelfComp, 
+                backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM, scoringMethod=None, 
+                genome=None, gene=None, isoform=None, gene_isoforms=None):
     """ Parses bowtie hits and build list of guides"""
     
     currGuide = None
@@ -1190,11 +1250,12 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
             elements = line[0].split(":") #removes from name 5' and 3' tails
             name = ":".join(elements[0:3])
             if currGuide == None or name != currGuide.name:
-                currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, backbone, PAM, replace5prime, scoringMethod, genome)
+                currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, 
+                                       backbone, PAM, replace5prime, scoringMethod, genome, gene, isoform, gene_isoforms)
                 guideList.append(currGuide)
 
             # Adds hit to off-target list of current guide.
-            currGuide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, countMM)
+            currGuide.addOffTarget(Hit(line), maxOffTargets, countMM)
         
    
     for guideNum in range(0, len(guideList)):
@@ -1436,6 +1497,7 @@ def dump_genbank_file(seq, target, restSites, primers, outputDir, geneID, lociSt
 
     pass
 
+
 def pairPrimers(primerAttributes, primerList, outputDir):
     primers = {}
 
@@ -1475,7 +1537,7 @@ def pairPrimers(primerAttributes, primerList, outputDir):
         json.dump(output, outputFile)
         outputFile.close()
 
-
+ 
 def make_primer_for_target(guide, outputDir, sequence, seqLenBeforeTarget, primer3options, padding):
     
     template = """PRIMER_SEQUENCE_ID={PRIMER_SEQUENCE_ID:s}
@@ -1644,7 +1706,7 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
             break
                 
     if add:
-        dna = dna.reverse_complement()
+        dna = dna.reverse_complement() if not ISOFORMS else dna
         fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
         return True
     
@@ -1657,7 +1719,7 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
             add = False
             break
     
-    if add:
+    if add and not ISOFORMS:
         #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
         fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
         return True
@@ -1690,12 +1752,13 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
         # in order to control the number of mismatches to search in the last 8 or 3 bps, 
         # need to reverse complement so the seed region can be at the start
         # rather than end of the sequence
+        # not in isoforms case as we don't search reverse complement
         if add:
-            dna = dna.reverse_complement()    
+            dna = dna.reverse_complement() if not ISOFORMS else dna
             fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
             return True
 
-    if str(dna[-2:].reverse_complement()) in allowed:
+    if str(dna[-2:].reverse_complement()) in allowed and not ISOFORMS:
         add = True
 
         for pos in range(len(PAM)):
@@ -1924,6 +1987,7 @@ def sort_TALEN_pairs(pairs):
 def complement(sequence):
     return sequence.translate(string.maketrans("ACGT", "TGCA"))
 
+
 def FastaToViscoords(sequences, strand):
     """ Makes the exons in 'sequences' array generated in coordToFasta json readable for visualization"""
     exonstart = []
@@ -2011,7 +2075,11 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
     isCoordinate = pattern.match(targetString)
 
     if isCoordinate: 
-
+        
+        if ISOFORMS:
+                sys.stderr.write("--isoforms is not yet ready with coordinate search.\n")
+                sys.exit(EXIT['ISOFORMS_ERROR'])
+                
         # Target specified as coordinate
         if target_strand == None:
             target_strand = "+"
@@ -2066,8 +2134,11 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
         ## GENE / TRANSCRIPT
         if use_db:
             (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_db(targetString, genome, data, padSize, index)
+            if ISOFORMS:
+                sys.stderr.write("--isoforms is not yet ready with database search.\n")
+                sys.exit(EXIT['ISOFORMS_ERROR'])
         else:
-            (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_file(targetString, data, padSize, index)
+            (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_file(targetString, data, padSize)
 
         if target_strand == None:
             target_strand = strand
@@ -2245,6 +2316,7 @@ def getMismatchVectors(pam, gLength, cong):
 
     return allowed, count
 
+
 def getCpf1MismatchVectors(pam, gLength):
     
     allowed = [True] * (gLength -len(pam))
@@ -2258,6 +2330,7 @@ def getCpf1MismatchVectors(pam, gLength):
             allowed.insert(0,False)
 
     return allowed, count
+
 
 def mode_select(var, index, MODE):
     """ Selects a default depending on mode for options that have not been set """
@@ -2279,7 +2352,6 @@ def mode_select(var, index, MODE):
 
     sys.stderr.write("Unknown model %s\n" % MODE)
     sys.exit(EXIT['PYTHON_ERROR'])
-
 
 
 def main():
@@ -2321,7 +2393,12 @@ def main():
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
     parser.add_argument("--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
     parser.add_argument("--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
+    parser.add_argument("--isoforms", default = False, action="store_true", help="Search for offtargets on the transcriptome.")
     args = parser.parse_args()
+    
+    # set isoforms to global as it is influencing many steps
+    global ISOFORMS
+    ISOFORMS = args.isoforms
 
     # Add TALEN length
     args.taleMin += 18
@@ -2363,7 +2440,7 @@ def main():
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
         allowed = getAllowedFivePrime(args.fivePrimeEnd)
         evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
-        guideClass = Cas9
+        guideClass = Cas9 if not ISOFORMS else Guide
         sortOutput = sort_CRISPR_guides
     elif args.MODE == CPF1:
         (allowedMM, countMM) = getCpf1MismatchVectors(args.PAM, args.guideSize)
@@ -2401,23 +2478,34 @@ def main():
     else:
         targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
         sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome)
-
-    ## Converts genomic coordinates to fasta file of all possible 16-mers
+    
+    gene, isoform, gene_isoforms = geneIsoforms(args.targets, db) if ISOFORMS else (None, None, set())
+    
+    ## Converts genomic coordinates to fasta file of all possible k-mers
     if len(sequences) == 0:
         sys.stderr.write("No target sites\n")
         sys.exit()
         
-
     # Run bowtie and get results
-    bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, int(args.maxOffTargets), BOWTIE_INDEX_DIR, args.genome, int(args.maxMismatches))
-    results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, args.scoringMethod, args.genome)  # TALENS: MAKE_PAIRS + CLUSTER
+    bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, 
+                                  int(args.maxOffTargets), ISOFORMS_INDEX_DIR if ISOFORMS else BOWTIE_INDEX_DIR, 
+                                  args.genome, int(args.maxMismatches))
+    results = parseBowtie(guideClass, bowtieResultsFile, displayIndices, targets, args.scoreGC, args.scoreSelfComp, 
+                          args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, 
+                          args.scoringMethod, args.genome, gene, isoform, gene_isoforms)  # TALENS: MAKE_PAIRS + CLUSTER
 
     if args.rm1perfOff and args.fasta:
         for guide in results:
             if guide.offTargetsMM[0] > 0:
                 guide.score = guide.score - SINGLE_OFFTARGET_SCORE[0]
+                
+    if ISOFORMS:
+        for guide in results:
+            other_isoforms = guide.gene_isoforms.remove(guide.isoform) if guide.isoform in guide.gene_isoforms else guide.gene_isoforms
+            other_off_isoforms = guide.offTargetsIso[0].remove(guide.isoform) if guide.isoform in guide.offTargetsIso[0] else guide.offTargetsIso[0]
+            guide.conserved = other_isoforms == other_off_isoforms
 
-    if (args.scoringMethod == "CHARI_2015" or args.scoringMethod == "ALL") and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10"):
+    if (args.scoringMethod == "CHARI_2015" or args.scoringMethod == "ALL") and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10") and not ISOFORMS:
         try:
             #make file to score
             svmInputFile = '%s/chari_score.SVMInput.txt' % args.outputDir
@@ -2460,7 +2548,7 @@ def main():
             pass
 
 
-    if args.MODE == CRISPR or args.MODE == CPF1:
+    if args.MODE == CRISPR or args.MODE == CPF1 or ISOFORMS:
         cluster = 0
     elif args.MODE == TALENS:
         pairs = pairTalens(results, sequences, args.guideSize, int(args.taleMin), int(args.taleMax), args.enzymeCo, args.maxOffTargets, args.g_RVD, args.minResSiteLen)
@@ -2493,7 +2581,7 @@ def main():
         cluster, results = clusterPairs(pairs)
 
     # Sorts pairs according to score/penalty and cluster 
-    if strand =="-":
+    if strand == "-" and not ISOFORMS:
         results.reverse()
 
     sortedOutput = sortOutput(results)
@@ -2510,41 +2598,47 @@ def main():
 
     ## Print results 
     resultCoords = []
-
-    if args.MODE == CRISPR:
-        common_header = "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
-        if args.scoringMethod == "ALL":
-            print(common_header + "\tXU_2015\tDOENCH_2014\tDOENCH_2016\tMORENO_MATEOS_2015\tCHARI_2015\tG_20")
-        else:
-            print(common_header + "\tEfficiency")
+    
+    if ISOFORMS:
+        print "Rank\tTarget sequence\tGenomic location\tExon\tGene\tIsoform\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3\tConserved\tIsoformsMM0\tIsoformsMM1\tIsoformsMM2\tIsoformsMM3"
         for i in range(len(sortedOutput)):
             print "%s\t%s" % (i+1, sortedOutput[i])            
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
+    else:                                                                         
+        if args.MODE == CRISPR:
+            common_header = "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
+            if args.scoringMethod == "ALL":
+                print(common_header + "\tXU_2015\tDOENCH_2014\tDOENCH_2016\tMORENO_MATEOS_2015\tCHARI_2015\tG_20")
+            else:
+                print(common_header + "\tEfficiency")
+            for i in range(len(sortedOutput)):
+                print "%s\t%s" % (i+1, sortedOutput[i])            
+                resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
+                
+        elif args.MODE == CPF1:
+            print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
+            for i in range(len(sortedOutput)):
+                print "%s\t%s" % (i+1, sortedOutput[i])            
+                resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
+    
+        elif args.MODE == TALENS or args.MODE == NICKASE:
             
-    elif args.MODE == CPF1:
-        print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
-        for i in range(len(sortedOutput)):
-            print "%s\t%s" % (i+1, sortedOutput[i])            
-            resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
-
-    elif args.MODE == TALENS or args.MODE == NICKASE:
-        
-        if args.MODE == TALENS:
-            print "Rank\tTarget sequence\tGenomic location\tExon\tTALE 1\tTALE 2\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
-        else:
-            print "Rank\tTarget sequence\tGenomic location\tExon\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
-        finalOutput = []
-        for cluster in listOfClusters:  ## FIX: WHY ARE THERE EMPTY CLUSTERS???
-            if len(cluster) == 0:
-                continue
-
-            finalOutput.append(cluster[0])
-
-        sortedFinalOutput = sortOutput(finalOutput)
-        resultCoords = [[j+1, sortedFinalOutput[j].spacerStart, sortedFinalOutput[j].score, sortedFinalOutput[j].spacerSize, sortedFinalOutput[j].strand, sortedFinalOutput[j].ID, sortedFinalOutput[j].tale1.start, sortedFinalOutput[j].tale2.end] for j in range(len(sortedFinalOutput))]
-
-        for i in range(len(sortedFinalOutput)):
-            print "%s\t%s\t%s" % (i+1,sortedFinalOutput[i], sortedFinalOutput[i].ID)
+            if args.MODE == TALENS:
+                print "Rank\tTarget sequence\tGenomic location\tExon\tTALE 1\tTALE 2\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
+            else:
+                print "Rank\tTarget sequence\tGenomic location\tExon\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
+            finalOutput = []
+            for cluster in listOfClusters:  ## FIX: WHY ARE THERE EMPTY CLUSTERS???
+                if len(cluster) == 0:
+                    continue
+    
+                finalOutput.append(cluster[0])
+    
+            sortedFinalOutput = sortOutput(finalOutput)
+            resultCoords = [[j+1, sortedFinalOutput[j].spacerStart, sortedFinalOutput[j].score, sortedFinalOutput[j].spacerSize, sortedFinalOutput[j].strand, sortedFinalOutput[j].ID, sortedFinalOutput[j].tale1.start, sortedFinalOutput[j].tale2.end] for j in range(len(sortedFinalOutput))]
+    
+            for i in range(len(sortedFinalOutput)):
+                print "%s\t%s\t%s" % (i+1,sortedFinalOutput[i], sortedFinalOutput[i].ID)
     
     # Print gene annotation files
 

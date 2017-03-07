@@ -73,8 +73,8 @@ def main():
                         help="Guides will be filtered for supplied comma separated list of restriction enzymes eg. BbsI,EcoRI or by default not filtered at all.")
     args = parser.parse_args()
 
-    dir = os.path.dirname(__file__)
-    bowtie = os.path.join(dir, "/bowtie/bowtie")
+    curr_dir = os.path.dirname(__file__)
+    bowtie = os.path.join(curr_dir, "/bowtie/bowtie")
 
     allsequences = set({})
     print("Target sequence\tGC content (%)")

@@ -1,11 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.7
 
-import sys
 import os
 import csv
 import argparse
 import subprocess
-import shutil
 
 
 def main():

@@ -1,15 +1,13 @@
 #!/usr/bin/env python2.7
 
+# This file is copied from Doench
+
 import pandas
 import time
 import numpy as np
 import Bio.SeqUtils as SeqUtil
-import Bio.Seq as Seq
-import sys
 import Bio.SeqUtils.MeltingTemp as Tm
-import pickle
 import itertools
-import sklearn
 
 def featurize_data(data, learn_options, Y, gene_position):
     '''
@@ -114,16 +112,6 @@ def SeqUtilFeatures(data):
         featarray[i, 0] = SeqUtil.molecular_weight(str(seq))
 
     feat = pandas.DataFrame(pandas.DataFrame(featarray))
-    return feat
-
-
-def organism_feature(data):
-    '''
-    Human vs. mouse
-    '''
-    organism = np.array(data['Organism'].values)
-    feat = pandas.DataFrame(pandas.DataFrame(featarray))
-    import ipdb; ipdb.set_trace()
     return feat
 
 
@@ -250,10 +238,10 @@ def normalize_feature_sets(feature_sets):
     t1 = time.time()
 
     new_feature_sets = {}
-    for set in feature_sets:
-         new_feature_sets[set] = normalize_features(feature_sets[set],axis=0)
-         if np.any(np.isnan(new_feature_sets[set].values)):
-             raise Exception("found Nan feature values in set=%s" % set)
+    for fset in feature_sets:
+        new_feature_sets[fset] = normalize_features(feature_sets[fset],axis=0)
+        if np.any(np.isnan(new_feature_sets[fset].values)):
+            raise Exception("found Nan feature values in set=%s" % fset)
 
     t2 = time.time()
     print "\t\tElapsed time for normalizing features is %.2f seconds" % (t2-t1)
