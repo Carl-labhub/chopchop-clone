@@ -20,11 +20,12 @@ import featurization as feat
 import scipy.stats as ss
 
 from collections import defaultdict
-from Bio import SeqIO, SeqFeature, SeqRecord
+from Bio import SeqIO
 from Bio.Restriction import Analysis, RestrictionBatch
 from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 from Bio.Alphabet.IUPAC import IUPACAmbiguousDNA
-from Bio.SeqFeature import FeatureLocation
+from Bio.SeqFeature import SeqFeature, FeatureLocation
 from operator import itemgetter, attrgetter
 from subprocess import Popen, PIPE
 
