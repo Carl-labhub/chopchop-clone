@@ -40,10 +40,10 @@ ISOFORMS = False
 PRIMER3 = "./primer3_core"
 BOWTIE = "bowtie/bowtie"
 TWOBITTOFA = "./twoBitToFa"
-TWOBIT_INDEX_DIR = "/your/full/path/to/2bit_folder"
-BOWTIE_INDEX_DIR = "/your/full/path/to/ebwt_folder"
-ISOFORMS_INDEX_DIR = "/your/full/path/to/ebwt_transcriptome_folder" #only when using --isoforms
-GENE_TABLE_INDEX_DIR = "/your/full/path/to/genePred_folder"
+TWOBIT_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+BOWTIE_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+ISOFORMS_INDEX_DIR = "/home/ai/Projects/c2c2" #only when using --isoforms
+GENE_TABLE_INDEX_DIR = "/home/ai/Projects/c2c2"
 
 # Program mode
 CRISPR = 1
@@ -411,7 +411,7 @@ class Guide(object):
                 self.score += SCORE['CRISPR_BAD_GC']
 
 
-    def addOffTarget(self, hit, maxOffTargets, countMMPos):        
+    def addOffTarget(self, hit, checkMismatch, maxOffTargets, countMMPos):        
         """ Add off target hits (and not original hit) to list for each guide RNA """    
 
         hit_id = "%s:%s" % (hit.chrom, hit.start)
@@ -434,19 +434,19 @@ class Guide(object):
             return
 
         # Reverse count+allowed arrays if on the reverse strand
-        if hit.flagSum == 0 and not ISOFORMS:
+        if checkMismatch and hit.flagSum == 0 and not ISOFORMS:
             countMMPos = countMMPos[::-1]
 
         self.offTarget_hash[hit_id] = hit         
-        MMs = get_mismatch_pos(hit.mismatchPos[5:])
+        if checkMismatch:
+          MMs = get_mismatch_pos(hit.mismatchPos[5:])
+          for mm in MMs:
+              if not countMMPos[mm]:
+                  del(self.offTarget_hash[hit_id])
+                  return
 
-        for mm in MMs:
-            if not countMMPos[mm]:
-                del(self.offTarget_hash[hit_id])
-                return
-
-            elif not countMMPos[mm]:
-                nmiss += 1
+              elif not countMMPos[mm]:
+                  nmiss += 1
 
         # Calculate score
         for opt in hit.opts:
@@ -455,7 +455,7 @@ class Guide(object):
                 mm = int(m.group(1)) - nmiss
                 
                 # ugly repeat to save time from iterating all isoforms 
-                if ISOFORMS: 
+                if ISOFORMS and checkMismatch: 
                     if hit.chrom in self.gene_isoforms: # and hit.chrom not in self.offTargetsIso[mm]:
                         self.offTargetsIso[mm].add(hit.chrom)
                         # don't count/score isoform mismatches but display which isoforms have them
@@ -1110,18 +1110,22 @@ def geneToCoord_file(geneIN, tableFile, guideSize):
     tableR = open(tableFile, 'rb')
     tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
 
+    line = []
     # Look in genome table for gene of question
     for row in tablereader:
         if (row['name'] == geneIN or row['name2'] == geneIN):
             line = [row['chrom'], row['exonStarts'], row['exonEnds'], row['cdsStart'], row['cdsEnd'], row['strand']]
             break
-    
+
     tableR.close()
+
+    if not line:
+        # Error if gene doesn't exist.
+        sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (geneIN, tableFile))
+        sys.exit(EXIT['GENE_ERROR'])
+    
     return (_geneLineToCoord(line[:3], guideSize), line[3], line[4], line[5])
 
-    # Error if gene doesn't exist.
-    sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (geneIN, tableFile))
-    sys.exit(EXIT['GENE_ERROR'])
 
 def geneIsoforms(isoform, tableFile):
     
@@ -1235,7 +1239,7 @@ def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets,
     return bowtieResultsFile
 
 
-def parseBowtie(guideClass, bowtieResultsFile, displayIndices, targets, scoreGC, scoreSelfComp, 
+def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, 
                 backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM, scoringMethod=None, 
                 genome=None, gene=None, isoform=None, gene_isoforms=None):
     """ Parses bowtie hits and build list of guides"""
@@ -1256,7 +1260,7 @@ def parseBowtie(guideClass, bowtieResultsFile, displayIndices, targets, scoreGC,
                 guideList.append(currGuide)
 
             # Adds hit to off-target list of current guide.
-            currGuide.addOffTarget(Hit(line), maxOffTargets, countMM)
+            currGuide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, countMM)
         
    
     for guideNum in range(0, len(guideList)):
@@ -1364,7 +1368,7 @@ def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, max
         sys.stderr.write("Running bowtie on primers failed\n");
         sys.exit(EXIT['BOWTIE_PRIMER_ERROR']);
 
-    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, [], [], False, False, None, None, maxOffTargets, None, None, None, None, None)
+    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, False, [], [], False, False, None, None, maxOffTargets, None, None, None, None, None)
 
 
 def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
@@ -2491,7 +2495,7 @@ def main():
     bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, 
                                   int(args.maxOffTargets), ISOFORMS_INDEX_DIR if ISOFORMS else BOWTIE_INDEX_DIR, 
                                   args.genome, int(args.maxMismatches))
-    results = parseBowtie(guideClass, bowtieResultsFile, displayIndices, targets, args.scoreGC, args.scoreSelfComp, 
+    results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, 
                           args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, 
                           args.scoringMethod, args.genome, gene, isoform, gene_isoforms)  # TALENS: MAKE_PAIRS + CLUSTER
 
@@ -2504,7 +2508,7 @@ def main():
         for guide in results:
             other_isoforms = guide.gene_isoforms.remove(guide.isoform) if guide.isoform in guide.gene_isoforms else guide.gene_isoforms
             other_off_isoforms = guide.offTargetsIso[0].remove(guide.isoform) if guide.isoform in guide.offTargetsIso[0] else guide.offTargetsIso[0]
-            guide.conserved = other_isoforms == other_off_isoforms
+            guide.conserved = int(other_isoforms == other_off_isoforms)
 
     if (args.scoringMethod == "CHARI_2015" or args.scoringMethod == "ALL") and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10") and not ISOFORMS:
         try:
