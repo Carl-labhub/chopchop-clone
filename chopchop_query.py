@@ -1,5 +1,6 @@
 #!/usr/bin/env python2.7
 
+import sys
 import os
 import ast
 import argparse
@@ -25,10 +26,21 @@ def main():
                                 "of guideRNA to use per gene eg. -c 1"))
     parser.add_argument("--guide_dist", default = 120, type = int, 
                         help = "Mimnimum distance between guides when using many guides per gene.")
+    parser.add_argument("--bed", default = False, action='store_true',
+                        help = ("Creates bed file to be viewed in UCSC genome browser as custom tracks: " +
+                                "https://genome.ucsc.edu/cgi-bin/hgCustom " +
+                                "Each track is shown as Forward Primer --- Guide --- Reverse Primer. " +
+                                "Location of the browser window is set for the first guide in the first gene."))
     args = parser.parse_known_args()
 
     if args[0].amplican is not None and args[0].amplican < 1:
         parser.error("Number of guides per gene in --amplican has to be greater than 0.")
+
+    if args[0].bed and args[0].amplican is None:
+        parser.error("Option --bed can only be used with option --amplican.")
+
+    if args[0].bed and "--isoforms" in args[1]:
+        parser.error("Option --bed is not yet ready with option --isoform.")
 
     if args[0].outputDir == "./":
         exit("Supply a folder for results.")
@@ -55,6 +67,10 @@ def main():
 
         config = pd.DataFrame(columns = ("ID", "Barcode", "Forward_Reads", "Reverse_Reads", "Group", "guideRNA", "Forward_Primer", "Reverse_Primer", "Direction", "Amplicon"))
         previous_guide_positions = {} # store for reference
+
+    if args[0].bed:
+        bed_file = os.path.join(args[0].outputDir, "UCSC_custom_track.bed")
+        bed_handle = open(bed_file, "w")
 
     for gene in genes:
 
@@ -132,13 +148,17 @@ def main():
                         if FR not in this_br_pr:
                             barcode = br
                             primer_left = pr[7]
+                            primer_left_start = pr[1]
                             primer_right = pr[8]
+                            primer_right_start =  pr[3]
                             break
 
                 # when none of the primers can't fit within existing barcodes make a new one
                 if primer_left == "" or primer_right == "": 
                     primer_left = primer_content[0][7]
+                    primer_left_start = primer_content[0][1]
                     primer_right = primer_content[0][8]
+                    primer_right_start =  primer_content[0][3]
                     barcode =  0 if not barcodes_so_far else max(barcodes_so_far) + 1
 
                 # get amplicon
@@ -169,12 +189,29 @@ def main():
                 
 
                 # add line to the config
-                config.loc[len(config.index)] = [gene + "_guide_" + str(guide_num + 1), 
+                guide_name = gene + "_guide_" + str(guide_num + 1)
+                config.loc[len(config.index)] = [guide_name, 
                                                  barcode, "", "", gene, 
                                                  guide.upper(), primer_left.upper(), primer_right.upper(), 
                                                  direction, 
                                                  amplicon]
                 previous_guide_positions[this_gene_chrom].append(guide_loci[guide_row_in_table])
+
+                if args[0].bed:
+                    primer_right_end = primer_right_start + len(primer_right)
+
+                    if genes.index(gene) == 0 and guide_num == 0: # for the first gene only put the browser it's chromosome and add header
+                        bed_handle.write("browser position {0}:{1}-{2}\n".format(this_gene_chrom, primer_left_start - 1, primer_right_end - 1))
+                        header = ("""track name=chopchop_query description=\"""" + (" ").join(sys.argv) + 
+                                  """\" visibility="pack" itemRgb="Off"\n""")
+                        bed_handle.write(header)
+                    
+                    bed_line = "{0}\t{1}\t{2}\t{3}\t0\t{4}\t{1}\t{2}\t0\t3\t{5}\t{6}\n".format(
+                        this_gene_chrom, primer_left_start - 1, primer_right_end - 1, guide_name,
+                        gene_table["Strand"][guide_num] if "--isoforms" not in args[1] else ".",
+                        str(len(primer_left)) + "," + str(len(guide)) + "," + str(len(primer_right)),
+                        "0," + str(guide_loci[guide_row_in_table] - primer_left_start) + "," + str(primer_right_start - primer_left_start))
+                    bed_handle.write(bed_line)
 
         print "Finished for " + gene
 
@@ -183,6 +220,9 @@ def main():
         config["Barcode"] =  ["Barcode_" + str(int(i)) for i in config["Barcode"].tolist()]
         config["Direction"] = config["Direction"].astype(int)
         config.to_csv(os.path.join(args[0].outputDir, "amplican_config.tsv"), sep='\t')
+
+    if args[0].bed:
+        bed_handle.close()
 
     # cleanup after CHOPCHOP temp files
     for the_file in os.listdir(args[0].outputDir):
