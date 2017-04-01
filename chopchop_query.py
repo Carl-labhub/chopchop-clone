@@ -7,6 +7,7 @@ import argparse
 import subprocess
 import pandas as pd
 from Bio.Seq import Seq
+from Bio import SeqIO
 
 def main():
     parser = argparse.ArgumentParser(prog="CHOPCHOP query")
@@ -80,8 +81,8 @@ def main():
         temp_comd = list(command)
         temp_comd.append(gene)
 
-        b = subprocess.Popen(temp_comd, stdout = gene_handle, stderr = subprocess.STDOUT)
-        b.wait()
+        c = subprocess.Popen(temp_comd, stdout = gene_handle, stderr = subprocess.STDOUT)
+        c.wait()
         gene_handle.close()
 
         if args[0].amplican is not None:
@@ -99,24 +100,20 @@ def main():
                 previous_guide_positions[this_gene_chrom] = []
 
             guide_row_in_table = 0
+            guide_num = 0
             
-            for guide_num in range(args[0].amplican):
+            while guide_num != args[0].amplican:
 
-                # not only to the first previous guide but also ALL previous
-                # have to be spaced with minimum distance 
-                failed_list = []
-                for guide_pos in guide_loci:
-                    distance = [abs(pre - guide_pos) > args[0].guide_dist for pre in previous_guide_positions[this_gene_chrom]]
-                    if all(distance) or not distance: # first guide in first gene gets a pass or all dist are good
-                        guide_row_in_table = guide_loci.index(guide_pos) # next highest score guide with min distance
-                        break
-                    else:
-                        failed_list.append(True)
-
-                if len(failed_list) == len(guide_loci):
+                if guide_row_in_table > len(guide_loci):
                     print "Only " + str(guide_num + 1) + " guides with specified distances for " + gene
                     break
-
+                
+                # this guide candidate has to be spaced with minimum distance to ALL previous guides
+                distances = [abs(pre - guide_loci[guide_row_in_table]) > args[0].guide_dist for pre in previous_guide_positions[this_gene_chrom]]
+                if not all(distances):
+                    guide_row_in_table += 1
+                    continue
+                    
                 # try getting primers
                 try:
                     primer_file = os.path.join(args[0].outputDir, "primer_" + str(guide_row_in_table + 1) + ".json")
@@ -124,9 +121,27 @@ def main():
                     primer_content = primer_handle.readlines()
                     primer_handle.close()
                     primer_content = ast.literal_eval(primer_content[0])
-                except Exception:
-                    print "No primers for " + gene
+                except Exception: # try next guide
+                    guide_row_in_table += 1
                     continue
+                
+                # filter primers with offtargets
+                primer_conent = [a for a in primer_content if a[9:12] == [0, 0, 0]]
+                if not primer_content:
+                    guide_row_in_table += 1
+                    continue
+                
+                # get amplicon
+                try:
+                    amplicon = SeqIO.parse(os.path.join(args[0].outputDir, gene + "_" + str(guide_row_in_table + 1) + ".gb"), "genbank")
+                    for index, record in enumerate(amplicon):
+                        amplicon = str(record.seq)
+                except Exception:
+                    guide_row_in_table += 1
+                    continue
+                
+                # figure whether Left and RIGHT are swapped
+                LR_swap = amplicon.lower().find(primer_content[0][7].lower()) == -1
                 
                 # select primers and barcodes toward minimizing number of unique barcodes
                 # each barcode + F + R have to be unique and each barcode has to have unique set of fastq files
@@ -134,59 +149,47 @@ def main():
                 primer_left = ""
                 primer_right = ""
 
-                for br in barcodes_so_far: 
+                for br in barcodes_so_far:
 
                     if primer_left != "" and primer_right != "":
                         break
 
                     for pr in primer_content:
-
-                        FR = pr[7] + pr[8]
+                        L = pr[8] if LR_swap else pr[7]
+                        R = pr[7] if LR_swap else pr[8]
+                        LR =  L + R
                         this_br_rows = config.loc[config["Barcode"] == br]
-                        this_br_pr = [F + R for F, R in zip(this_br_rows["Forward_Primer"].tolist(), 
+                        this_br_pr = [a + b for a, b in zip(this_br_rows["Forward_Primer"].tolist(), 
                                                             this_br_rows["Reverse_Primer"].tolist())]
-                        if FR not in this_br_pr:
+                        if LR not in this_br_pr:
                             barcode = br
-                            primer_left = pr[7]
+                            primer_left = L
                             primer_left_start = pr[1]
-                            primer_right = pr[8]
-                            primer_right_start =  pr[3]
+                            primer_right = R
+                            primer_right_start = pr[3]
                             break
 
                 # when none of the primers can't fit within existing barcodes make a new one
+                # with the first primer from the list
                 if primer_left == "" or primer_right == "": 
-                    primer_left = primer_content[0][7]
-                    primer_left_start = primer_content[0][1]
-                    primer_right = primer_content[0][8]
-                    primer_right_start =  primer_content[0][3]
+                    primer_left = primer_conent[0][8] if LR_swap else primer_conent[0][7]
+                    primer_left_start = primer_conent[0][3] if LR_swap else primer_conent[0][1]
+                    primer_right = primer_conent[0][7] if LR_swap else primer_conent[0][8]
+                    primer_right_start = primer_conent[0][1] if LR_swap else primer_conent[0][3]
                     barcode =  0 if not barcodes_so_far else max(barcodes_so_far) + 1
-
-                # get amplicon
-                try:
-                    amplicon_file = os.path.join(args[0].outputDir, "locusSeq_" + str(guide_row_in_table + 1) + ".json")
-                    amplicon_handle = open(amplicon_file, "r")
-                    amplicon_content = amplicon_handle.readlines()
-                    amplicon_handle.close()
-                    amplicon = ast.literal_eval(amplicon_content[0])[0][2]
-                except Exception:
-                    print "Failed to find amplicon sequence for " + gene
-                    continue
                 
                 # Direction of the guide
-                direction = int(gene_table["Strand"][guide_num] == "-") if "--isoforms" not in args[1] else 0
-
+                direction = int(gene_table["Strand"][guide_row_in_table] == "-") if "--isoforms" not in args[1] else 0
                 # trim amplicon sequence to the primers
                 left_end = amplicon.lower().find(primer_left.lower())
                 right_end = amplicon.lower().find(str(Seq(primer_right).reverse_complement()).lower()) + len(primer_right)
                 amplicon = amplicon[left_end:right_end].upper()
-
+                
                 # put to upper guide sequence in the amplicon
                 guide = gene_table["Target sequence"][guide_row_in_table].upper()
-                guide_left_pos = amplicon.find(guide) if direction == 0 else amplicon.find(str(Seq(primer_right).reverse_complement()))
+                guide_left_pos = amplicon.find(guide) if direction == 0 else amplicon.find(str(Seq(guide).reverse_complement()))
                 guide_right_pos = guide_left_pos + len(guide)
                 amplicon = amplicon[:guide_left_pos].lower() + amplicon[guide_left_pos:guide_right_pos] + amplicon[guide_right_pos:].lower()
-
-                
 
                 # add line to the config
                 guide_name = gene + "_guide_" + str(guide_num + 1)
@@ -208,10 +211,14 @@ def main():
                     
                     bed_line = "{0}\t{1}\t{2}\t{3}\t0\t{4}\t{1}\t{2}\t0\t3\t{5}\t{6}\n".format(
                         this_gene_chrom, primer_left_start - 1, primer_right_end - 1, guide_name,
-                        gene_table["Strand"][guide_num] if "--isoforms" not in args[1] else ".",
+                        gene_table["Strand"][guide_row_in_table] if "--isoforms" not in args[1] else ".",
                         str(len(primer_left)) + "," + str(len(guide)) + "," + str(len(primer_right)),
                         "0," + str(guide_loci[guide_row_in_table] - primer_left_start) + "," + str(primer_right_start - primer_left_start))
                     bed_handle.write(bed_line)
+                
+                # before next while condition check
+                guide_row_in_table += 1
+                guide_num += 1
 
         print "Finished for " + gene
 
