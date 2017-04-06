@@ -1101,7 +1101,7 @@ def geneToCoord_db(gene, organism, db, guideSize, index):
     for i in range(index):
         line = db.fetchone()
 
-    return (_geneLineToCoord(line, guideSize), line[4], line[5], line[6])
+    return (_geneLineToCoord(line, guideSize), int(line[4]), int(line[5]), line[6])
 
 
 def geneToCoord_file(geneIN, tableFile, guideSize):    
@@ -1150,12 +1150,15 @@ def geneIsoforms(isoform, tableFile):
     return gene, isoform, gene_isoforms
     
     
-def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, indexDir, genome):
+def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, indexDir, genome, strand):
     """ Extracts the sequence corresponding to genomic coordinates from a FASTA file """
 
     sequences = {}
     fastaFile = open(fastaFile, 'w')
     fastaSeq = ""
+
+    if ISOFORMS and strand == "-":
+        regions = regions[::-1]
 
     for region in regions:
         # Extracts chromosome number and region start and end
@@ -1182,9 +1185,11 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
 
         # Join together the list without the first line to give just continuous dna sequence of each exon
         dna = ''.join(exons[1:]).upper()
+        if ISOFORMS and strand == "-":
+            dna = str(Seq(dna).reverse_complement())
 
         # Write exon sequences to text file user can open in ApE. exon-intron junctions in lowercase.
-        fastaSeq += dna[0].lower()+dna[2:-2]+dna[-1].lower()
+        fastaSeq += dna[0].lower()+dna[1:-1]+dna[-1].lower()
 
         # Add 1 due to BED 0-indexing
         name = "C:%s:%d-%d" % (chrom, start, finish)
@@ -2189,7 +2194,10 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
             targetSize += exon[2] - exon[1] + 1
 
         # Pad since can bind outside exons
-        targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1]-padSize, x[2]+padSize), coords))
+        if ISOFORMS:
+            targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1], x[2]), coords))
+        else:
+            targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1]-padSize, x[2]+padSize), coords))
 
     if targetSize > TARGET_MAX:
         sys.stderr.write("Search region is too large (%s nt). Maximum search region is %s nt.\n" % (targetSize, TARGET_MAX))
@@ -2482,7 +2490,7 @@ def main():
         sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
     else:
         targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
-        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome)
+        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome, strand)
     
     gene, isoform, gene_isoforms = geneIsoforms(args.targets, db) if ISOFORMS else (None, None, set())
     
