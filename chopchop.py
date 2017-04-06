@@ -40,10 +40,10 @@ ISOFORMS = False
 PRIMER3 = "./primer3_core"
 BOWTIE = "bowtie/bowtie"
 TWOBITTOFA = "./twoBitToFa"
-TWOBIT_INDEX_DIR = "/your/full/path/to/2bit_folder"
-BOWTIE_INDEX_DIR = "/your/full/path/to/ebwt_folder"
-ISOFORMS_INDEX_DIR = "/your/full/path/to/ebwt_transcriptome_folder" #only when using --isoforms
-GENE_TABLE_INDEX_DIR = "/your/full/path/to/genePred_folder"
+TWOBIT_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+BOWTIE_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+ISOFORMS_INDEX_DIR = "/home/ai/Projects/c2c2" #only when using --isoforms
+GENE_TABLE_INDEX_DIR = "/home/ai/Projects/c2c2"
 
 # Program mode
 CRISPR = 1
@@ -296,7 +296,8 @@ class Guide(object):
 
     def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, 
                  backbone_regions, PAM, replace5prime=None, scoringMethod=None, 
-                 genome=None, gene=None, isoform=None, gene_isoforms=None):
+                 genome=None, gene=None, isoform=None, gene_isoforms=None, 
+                 guide_fold = None, fold_metrics = None, gene_coords = (None, None)):
         
         self.scoringMethod = scoringMethod
         self.genome = genome
@@ -355,6 +356,9 @@ class Guide(object):
         self.start = self.exonStart + guidePos
         self.end = self.start + guideSize
         self.guideSeq = guideSeq
+        
+        
+        (exon_starts, exon_lenghts) = gene_coords
 
         # Record which strand the guide is on
         if flagSum == "16" or ISOFORMS: # due to reverse complementing before alignments
@@ -378,6 +382,14 @@ class Guide(object):
             
         # Scoring
         self.calcGCContent(scoreGC)
+
+        if ISOFORMS:
+            guidePos = sum(exon_lenghts[:exon_starts.index(self.exonStart)]) + guidePos - 1 # relative to the gene
+                
+            self.MFEfold = guide_fold[guidePos:guidePos + guideSize]
+            self.medianBPP = median(fold_metrics[1].tolist()[guidePos:guidePos + guideSize])
+            self.medianMFE = median(fold_metrics[2].tolist()[guidePos:guidePos + guideSize])
+            self.medianPE = median(fold_metrics[3].tolist()[guidePos:guidePos + guideSize])
 
 
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):   
@@ -496,16 +508,20 @@ class Guide(object):
     def __str__(self):
         self.sort_offTargets()
         if ISOFORMS:
-            return "%s\t%s:%s\t%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, 
-                                                                                            self.chrom, self.start, self.exonNum, 
-                                                                                            self.gene, self.isoform,
-                                                                                            self.GCcontent, self.folding, 
-                                                                                            self.offTargetsMM[0], self.offTargetsMM[1], 
-                                                                                            self.offTargetsMM[2], self.offTargetsMM[3], 
-                                                                                            self.conserved, (",").join(set(self.offTargetsIso[0])), 
-                                                                                            (",").join(set(self.offTargetsIso[1])), 
-                                                                                            (",").join(set(self.offTargetsIso[2])), 
-                                                                                            (",").join(set(self.offTargetsIso[3])))
+            return "%s\t%s:%s\t%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f" % (self.strandedGuideSeq, 
+                                                                                                                  self.chrom, self.start, self.exonNum, 
+                                                                                                                  self.gene, self.isoform,
+                                                                                                                  self.GCcontent, self.folding, 
+                                                                                                                  self.offTargetsMM[0], self.offTargetsMM[1], 
+                                                                                                                  self.offTargetsMM[2], self.offTargetsMM[3], 
+                                                                                                                  self.conserved, (",").join(set(self.offTargetsIso[0])), 
+                                                                                                                  (",").join(set(self.offTargetsIso[1])), 
+                                                                                                                  (",").join(set(self.offTargetsIso[2])), 
+                                                                                                                  (",").join(set(self.offTargetsIso[3])),
+                                                                                                                  self.MFEfold,
+                                                                                                                  self.medianBPP,
+                                                                                                                  self.medianMFE,
+                                                                                                                  self.medianPE)
         return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, 
                                                                 self.strand, self.GCcontent, self.folding, 
                                                                 self.offTargetsMM[0], self.offTargetsMM[1], 
@@ -1059,7 +1075,7 @@ def _geneLineToCoord(line, guideSize):
     intronSize = [int(startBase[x+1]) - int(endBase[x]) for x in range(len(startBase)-1)]
     intronSize.append(0)
     
-    return map(lambda x : [line[0], x[0], x[1], x[2]], zip(startBase, endBase ,intronSize))
+    return map(lambda x : [line[0], int(x[0]), int(x[1]), int(x[2])], zip(startBase, endBase, intronSize))
 
 
 def geneToCoord_db(gene, organism, db, guideSize, index):
@@ -1124,7 +1140,7 @@ def geneToCoord_file(geneIN, tableFile, guideSize):
         sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (geneIN, tableFile))
         sys.exit(EXIT['GENE_ERROR'])
     
-    return (_geneLineToCoord(line[:3], guideSize), line[3], line[4], line[5])
+    return (_geneLineToCoord(line[:3], guideSize), int(line[3]), int(line[4]), line[5])
 
 
 def geneIsoforms(isoform, tableFile):
@@ -1150,12 +1166,15 @@ def geneIsoforms(isoform, tableFile):
     return gene, isoform, gene_isoforms
     
     
-def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, indexDir, genome):
+def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, indexDir, genome, strand):
     """ Extracts the sequence corresponding to genomic coordinates from a FASTA file """
 
     sequences = {}
     fastaFile = open(fastaFile, 'w')
     fastaSeq = ""
+    
+    if ISOFORMS and strand == "-":
+        regions = regions[::-1]
 
     for region in regions:
         # Extracts chromosome number and region start and end
@@ -1167,7 +1186,7 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         # Run twoBitToFa program to get actual dna sequence corresponding to input genomic coordinates
         # Popen runs twoBitToFa program. PIPE pipes stdout.
         prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (TWOBITTOFA, chrom, start, finish, indexDir, genome, outputDir), stdout = PIPE, shell=True)    
-
+        
         # Communicate converts stdout to a string
         output = prog.communicate()  
         if (prog.returncode != 0):
@@ -1182,13 +1201,16 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
 
         # Join together the list without the first line to give just continuous dna sequence of each exon
         dna = ''.join(exons[1:]).upper()
-
+        
+        if ISOFORMS and strand == "-":
+            dna = str(Seq(dna).reverse_complement())
+            
         # Write exon sequences to text file user can open in ApE. exon-intron junctions in lowercase.
-        fastaSeq += dna[0].lower()+dna[2:-2]+dna[-1].lower()
+        fastaSeq += dna[0].lower()+dna[1:-1]+dna[-1].lower()
 
         # Add 1 due to BED 0-indexing
         name = "C:%s:%d-%d" % (chrom, start, finish)
-
+        
         # Loop over exon sequence, write every g-mer into file in which g-mer ends in PAM in fasta format 
         for num in range(0,len(dna)-(targetSize-1)):
             
@@ -1241,7 +1263,8 @@ def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets,
 
 def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, 
                 backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM, scoringMethod=None, 
-                genome=None, gene=None, isoform=None, gene_isoforms=None):
+                genome=None, gene=None, isoform=None, gene_isoforms=None, 
+                guide_fold = None, fold_metrics = None, gene_coords = None):
     """ Parses bowtie hits and build list of guides"""
     
     currGuide = None
@@ -1256,7 +1279,8 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
             name = ":".join(elements[0:3])
             if currGuide == None or name != currGuide.name:
                 currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, 
-                                       backbone, PAM, replace5prime, scoringMethod, genome, gene, isoform, gene_isoforms)
+                                       backbone, PAM, replace5prime, scoringMethod, genome, gene, isoform, gene_isoforms,
+                                       guide_fold, fold_metrics, gene_coords)
                 guideList.append(currGuide)
 
             # Adds hit to off-target list of current guide.
@@ -1368,7 +1392,7 @@ def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, max
         sys.stderr.write("Running bowtie on primers failed\n");
         sys.exit(EXIT['BOWTIE_PRIMER_ERROR']);
 
-    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, False, [], [], False, False, None, None, maxOffTargets, None, None, None, None, None)
+    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, False, [], [], False, False, None, None, maxOffTargets, None, None, None, None, None, None, None, None, None, None)
 
 
 def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
@@ -2017,6 +2041,16 @@ def FastaToViscoords(sequences, strand):
 ##
 ## MAIN
 ##
+def median(lst):
+    sortedLst = sorted(lst)
+    lstLen = len(lst)
+    index = (lstLen - 1) // 2
+
+    if (lstLen % 2):
+        return sortedLst[index]
+    else:
+        return (sortedLst[index] + sortedLst[index + 1])/2.0
+
 
 def getAllowedFivePrime(allowed):
 
@@ -2189,13 +2223,19 @@ def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exon
             targetSize += exon[2] - exon[1] + 1
 
         # Pad since can bind outside exons
-        targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1]-padSize, x[2]+padSize), coords))
+        if ISOFORMS:
+            targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1], x[2]), coords))
+        else:
+            targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1]-padSize, x[2]+padSize), coords))
 
     if targetSize > TARGET_MAX:
         sys.stderr.write("Search region is too large (%s nt). Maximum search region is %s nt.\n" % (targetSize, TARGET_MAX))
         sys.exit(EXIT['GENE_ERROR'])
+        
+    coords = (map(lambda x : x[1], coords), 
+              map(lambda x : x[2] - x[1], coords))
 
-    return (targets, displayIndices, visCoords, target_strand)
+    return (targets, coords, displayIndices, visCoords, target_strand)
 
 
 def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc):
@@ -2358,6 +2398,22 @@ def mode_select(var, index, MODE):
     sys.stderr.write("Unknown model %s\n" % MODE)
     sys.exit(EXIT['PYTHON_ERROR'])
 
+def getViennaMetrics(ISOFORMS_INDEX_DIR, isoform):
+    viennaMetrics = pandas.read_csv(ISOFORMS_INDEX_DIR + "/teshome.mountain/" + isoform + ".mt", sep = "\t", header = None)
+    return viennaMetrics
+
+def getViennaFold(ISOFORMS_INDEX_DIR, isoform):
+    toParse = ISOFORMS_INDEX_DIR + "/teshome.fold"
+    fasta_seq = SeqIO.parse(open(toParse),'fasta')
+    st = {"(",".", ")", "{", "}", "|", ","} # possible characters out of viennaRNA
+    
+    for fasta in fasta_seq:
+        name, sequence = fasta.id, str(fasta.seq)
+        if (name == isoform):
+            start_point = min(sequence.find(i) if i in st else None for i in st)
+            fold = sequence[start_point:start_point * 2]
+    return fold
+
 
 def main():
     # Parse arguments
@@ -2481,8 +2537,8 @@ def main():
     if args.fasta:
         sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
     else:
-        targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
-        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome)
+        targets, coords, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
+        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome, strand)
     
     gene, isoform, gene_isoforms = geneIsoforms(args.targets, db) if ISOFORMS else (None, None, set())
     
@@ -2495,9 +2551,13 @@ def main():
     bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, 
                                   int(args.maxOffTargets), ISOFORMS_INDEX_DIR if ISOFORMS else BOWTIE_INDEX_DIR, 
                                   args.genome, int(args.maxMismatches))
+
+    viennaFold = getViennaFold(ISOFORMS_INDEX_DIR, isoform) if ISOFORMS else []
+    viennaMetrics = getViennaMetrics(ISOFORMS_INDEX_DIR, isoform) if ISOFORMS else []
+
     results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, 
                           args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, 
-                          args.scoringMethod, args.genome, gene, isoform, gene_isoforms)  # TALENS: MAKE_PAIRS + CLUSTER
+                          args.scoringMethod, args.genome, gene, isoform, gene_isoforms, viennaFold, viennaMetrics, coords)  # TALENS: MAKE_PAIRS + CLUSTER
 
     if args.rm1perfOff and args.fasta:
         for guide in results:
