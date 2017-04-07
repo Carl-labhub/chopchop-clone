@@ -385,8 +385,15 @@ class Guide(object):
 
         if ISOFORMS:
             guidePos = sum(exon_lenghts[:exon_starts.index(self.exonStart)]) + guidePos - 1 # relative to the gene
-                
-            self.MFEfold = guide_fold[guidePos:guidePos + guideSize]
+            
+            ok_st = {")", "("}
+            guide_fold = guide_fold[guidePos:guidePos + guideSize]
+            percentage_fold = 0
+            for i in guide_fold:
+                if i in ok_st:
+                    percentage_fold = percentage_fold + 1
+
+            self.MFEfold = percentage_fold * 100 / len(guide_fold)
             self.medianBPP = median(fold_metrics[1].tolist()[guidePos:guidePos + guideSize])
             self.medianMFE = median(fold_metrics[2].tolist()[guidePos:guidePos + guideSize])
             self.medianPE = median(fold_metrics[3].tolist()[guidePos:guidePos + guideSize])
@@ -508,7 +515,7 @@ class Guide(object):
     def __str__(self):
         self.sort_offTargets()
         if ISOFORMS:
-            return "%s\t%s:%s\t%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f" % (self.strandedGuideSeq, 
+            return "%s\t%s:%s\t%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f" % (self.strandedGuideSeq, 
                                                                                                                   self.chrom, self.start, self.exonNum, 
                                                                                                                   self.gene, self.isoform,
                                                                                                                   self.GCcontent, self.folding, 
@@ -2412,6 +2419,7 @@ def getViennaFold(ISOFORMS_INDEX_DIR, isoform):
         if (name == isoform):
             start_point = min(sequence.find(i) if i in st else None for i in st)
             fold = sequence[start_point:start_point * 2]
+
     return fold
 
 
