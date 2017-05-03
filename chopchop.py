@@ -40,10 +40,10 @@ ISOFORMS = False
 PRIMER3 = "./primer3_core"
 BOWTIE = "bowtie/bowtie"
 TWOBITTOFA = "./twoBitToFa"
-TWOBIT_INDEX_DIR = "/your/full/path/to/2bit_folder"
-BOWTIE_INDEX_DIR = "/your/full/path/to/ebwt_folder"
+TWOBIT_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+BOWTIE_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
 ISOFORMS_INDEX_DIR = "/your/full/path/to/ebwt_transcriptome_folder" #only when using --isoforms
-GENE_TABLE_INDEX_DIR = "/your/full/path/to/genePred_folder"
+GENE_TABLE_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
 
 # Program mode
 CRISPR = 1
@@ -1228,7 +1228,7 @@ def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets,
         command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, (PAMlength + 11), maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
     else:
         command = "%s -v %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
-    
+
     if ISOFORMS: # When ISFORMS we don't check reverse complement 
         command = command + "--norc "
     
