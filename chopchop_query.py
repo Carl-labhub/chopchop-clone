@@ -24,7 +24,7 @@ def main():
                         help = ("This option will generate partial amplican configuration file " + 
                                 "containing guides, primers, amplicon sequences, identifiers and barcodes. " +
                                 "amplican is an R package for anlysis of CRISPR experiments. Supply number " +
-                                "of guideRNA to use per gene eg. -c 1"))
+                                "of guideRNA to use per gene eg. --amplican 1"))
     parser.add_argument("--guide_dist", default = 120, type = int, 
                         help = "Mimnimum distance between guides when using many guides per gene.")
     parser.add_argument("--bed", default = False, action='store_true',
@@ -66,7 +66,7 @@ def main():
             command.append("-3")
             command.append("PRODUCT_SIZE_MIN=150,PRODUCT_SIZE_MAX=290,PRIMER_MIN_SIZE=18,PRIMER_MAX_SIZE=25,PRIMER_OPT_SIZE=22,PRIMER_MIN_TM=57,PRIMER_MAX_TM=63,PRIMER_OPT_TM=60")
 
-        config = pd.DataFrame(columns = ("ID", "Barcode", "Forward_Reads", "Reverse_Reads", "Group", "guideRNA", "Forward_Primer", "Reverse_Primer", "Direction", "Amplicon"))
+        config = pd.DataFrame(columns = ("ID", "Barcode", "Forward_Reads", "Reverse_Reads", "Group", "Control", "guideRNA", "Forward_Primer", "Reverse_Primer", "Direction", "Amplicon"))
         previous_guide_positions = {} # store for reference
 
     if args[0].bed:
@@ -194,7 +194,7 @@ def main():
                 # add line to the config
                 guide_name = gene + "_guide_" + str(guide_num + 1)
                 config.loc[len(config.index)] = [guide_name, 
-                                                 barcode, "", "", gene, 
+                                                 barcode, "", "", gene, 0,
                                                  guide.upper(), primer_left.upper(), primer_right.upper(), 
                                                  direction, 
                                                  amplicon]
@@ -225,6 +225,7 @@ def main():
 
     if args[0].amplican is not None:
         config["Barcode"] =  ["Barcode_" + str(int(i)) for i in config["Barcode"].tolist()]
+        config["Control"] = config["Control"].astype(int)
         config["Direction"] = config["Direction"].astype(int)
         config.to_csv(os.path.join(args[0].outputDir, "amplican_config.tsv"), sep='\t')
 

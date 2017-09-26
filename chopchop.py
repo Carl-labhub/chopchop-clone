@@ -40,10 +40,10 @@ ISOFORMS = False
 PRIMER3 = "./primer3_core"
 BOWTIE = "bowtie/bowtie"
 TWOBITTOFA = "./twoBitToFa"
-TWOBIT_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
-BOWTIE_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+TWOBIT_INDEX_DIR = "/your/full/path/to/2bit_folder"
+BOWTIE_INDEX_DIR = "/your/full/path/to/ebwt_folder"
 ISOFORMS_INDEX_DIR = "/your/full/path/to/ebwt_transcriptome_folder" #only when using --isoforms
-GENE_TABLE_INDEX_DIR = "/home/ai/Projects/data/genomes_chopchop"
+GENE_TABLE_INDEX_DIR = "/your/full/path/to/genePred_folder"
 
 # Program mode
 CRISPR = 1
