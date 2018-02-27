@@ -66,7 +66,7 @@ def main():
             command.append("-3")
             command.append("PRODUCT_SIZE_MIN=150,PRODUCT_SIZE_MAX=290,PRIMER_MIN_SIZE=18,PRIMER_MAX_SIZE=25,PRIMER_OPT_SIZE=22,PRIMER_MIN_TM=57,PRIMER_MAX_TM=63,PRIMER_OPT_TM=60")
 
-        config = pd.DataFrame(columns = ("ID", "Barcode", "Forward_Reads", "Reverse_Reads", "Group", "Control", "guideRNA", "Forward_Primer", "Reverse_Primer", "Direction", "Amplicon"))
+        config = pd.DataFrame(columns = ("ID", "Barcode", "Forward_Reads", "Reverse_Reads", "Group", "Control", "guideRNA", "Forward_Primer", "Reverse_Primer", "Direction", "Amplicon", "Donor"))
         previous_guide_positions = {} # store for reference
 
     if args[0].bed:
