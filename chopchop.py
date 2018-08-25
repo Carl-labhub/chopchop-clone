@@ -402,10 +402,13 @@ class Guide(object):
 
     def calcGCContent(self, scoreGC):
         """ Calculate the GC content of the guide """
-        gSeq = self.guideSeq[len(self.PAM):]
-        Gcount = gSeq.count('G')
-        Ccount = gSeq.count('C')
-        self.GCcontent = (100*(float(Gcount+Ccount)/int(len(gSeq))))
+        if self.PAM is not None and self.strandedGuideSeq is not None:    
+            gSeq = self.strandedGuideSeq[len(self.PAM):]
+            Gcount = gSeq.count('G')
+            Ccount = gSeq.count('C')
+            self.GCcontent = (100*(float(Gcount+Ccount)/int(len(gSeq))))
+        else:
+            self.GCcontent = 0
 
         if scoreGC:
             if self.GCcontent > GC_HIGH or self.GCcontent < GC_LOW:
@@ -596,13 +599,15 @@ class Cas9(Guide):
                     
         self.score += self.folding * SCORE['FOLDING']
 
-
     def calcGCContent(self, scoreGC):
         """ Calculate the GC content of the guide """
-        gSeq = self.guideSeq[0:-len(PAM)]
-        Gcount = gSeq.count('G')
-        Ccount = gSeq.count('C')
-        self.GCcontent = (100*(float(Gcount+Ccount)/int(len(gSeq))))
+        if self.PAM is not None and self.strandedGuideSeq is not None:    
+            gSeq = self.strandedGuideSeq[0:-len(self.PAM)]
+            Gcount = gSeq.count('G')
+            Ccount = gSeq.count('C')
+            self.GCcontent = (100*(float(Gcount+Ccount)/int(len(gSeq))))
+        else:
+            self.GCcontent = 0
 
         if scoreGC:
             if self.GCcontent > GC_HIGH or self.GCcontent < GC_LOW:
