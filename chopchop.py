@@ -57,28 +57,28 @@ TARGET_MAX = 20000
 # Defaults
 CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
                   "PAM": "NGG",
-                  "MAX_OFFTARGETS" : 50,
+                  "MAX_OFFTARGETS" : 300,
                   "MAX_MISMATCHES" : 3,
                   "SCORE_GC" : True,
                   "SCORE_FOLDING" : True}
 
 TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
                  "PAM": "",
-                 "MAX_OFFTARGETS" : 100,
+                 "MAX_OFFTARGETS" : 200,
                  "MAX_MISMATCHES" : 2,
                  "SCORE_GC" : False,
                  "SCORE_FOLDING" : False}
 
 CPF1_DEFAULT =  {"GUIDE_SIZE" : 24,
                  "PAM": "TTTN",
-                 "MAX_OFFTARGETS" : 50,
+                 "MAX_OFFTARGETS" : 300,
                  "MAX_MISMATCHES" : 3,
                  "SCORE_GC" : True,
                  "SCORE_FOLDING" : True}
 
 NICKASE_DEFAULT =  {"GUIDE_SIZE" : 20,
                     "PAM": "NGG",
-                    "MAX_OFFTARGETS" : 50,
+                    "MAX_OFFTARGETS" : 300,
                     "MAX_MISMATCHES" : 3,
                     "SCORE_GC" : True,
                     "SCORE_FOLDING" : True}
@@ -296,8 +296,9 @@ class Guide(object):
 
     def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, 
                  backbone_regions, PAM, replace5prime=None, scoringMethod=None, 
-                 genome=None, gene=None, isoform=None, gene_isoforms=None):
+                 genome=None, gene=None, isoform=None, gene_isoforms=None, isKmaxed = False):
         
+        self.isKmaxed = isKmaxed # to print possibility of more mismatches
         self.scoringMethod = scoringMethod
         self.genome = genome
         self.gene = gene
@@ -307,7 +308,7 @@ class Guide(object):
         self.conserved = False # conservation of guide across all isoforms
         self.PAM = PAM
         # From the guide's name we can get the chromosome
-        self.flagSum = flagSum
+        self.flagSum = str(flagSum)
         elements = name.split(":")
         self.ID = elements[0]
         self.chrom = elements[1]
@@ -357,7 +358,7 @@ class Guide(object):
         self.guideSeq = guideSeq
 
         # Record which strand the guide is on
-        if flagSum == "16" or ISOFORMS: # due to reverse complementing before alignments
+        if self.flagSum == "16" or ISOFORMS: # due to reverse complementing before alignments
             self.strandedGuideSeq = guideSeq
             if self.strand is None:
                 self.strand = '+'
@@ -443,14 +444,14 @@ class Guide(object):
 
         self.offTarget_hash[hit_id] = hit         
         if checkMismatch:
-          MMs = get_mismatch_pos(hit.mismatchPos[5:])
-          for mm in MMs:
-              if not countMMPos[mm]:
-                  del(self.offTarget_hash[hit_id])
-                  return
+            MMs = get_mismatch_pos(hit.mismatchPos[5:])
+            for mm in MMs:
+                if not countMMPos[mm]:
+                    del(self.offTarget_hash[hit_id])
+                    return
 
-              elif not countMMPos[mm]:
-                  nmiss += 1
+                elif not countMMPos[mm]:
+                    nmiss += 1
 
         # Calculate score
         for opt in hit.opts:
@@ -513,7 +514,8 @@ class Guide(object):
         return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, 
                                                                 self.strand, self.GCcontent, self.folding, 
                                                                 self.offTargetsMM[0], self.offTargetsMM[1], 
-                                                                self.offTargetsMM[2], self.offTargetsMM[3])
+                                                                self.offTargetsMM[2], 
+                                                                ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3])
                   
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -559,7 +561,7 @@ class Cas9(Guide):
                                                                                                         self.offTargetsMM[0], 
                                                                                                         self.offTargetsMM[1], 
                                                                                                         self.offTargetsMM[2], 
-                                                                                                        self.offTargetsMM[3], 
+                                                                                                        ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3], 
                                                                                                         self.CoefficientsScore["XU_2015"],
                                                                                                         self.CoefficientsScore["DOENCH_2014"],
                                                                                                         self.CoefficientsScore["DOENCH_2016"],
@@ -577,7 +579,7 @@ class Cas9(Guide):
                                                                           self.offTargetsMM[0], 
                                                                           self.offTargetsMM[1], 
                                                                           self.offTargetsMM[2], 
-                                                                          self.offTargetsMM[3], 
+                                                                          ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3], 
                                                                           self.CoefficientsScore[self.scoringMethod])
     
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):
@@ -782,7 +784,12 @@ class Nickase:
         # This creates a tab delimited list of output, with the final column as a semicolon-separated list of REs that cut in the spacer        
         sequence = str(self.tale1.guideSeq) + "*" + self.spacerSeq + "*" + str(self.tale2.guideSeq)
 
-        return "%s\t%s:%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (sequence, self.chrom, self.start, self.tale1.exonNum, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], self.tale1.offTargetsMM[3], self.tale2.offTargetsMM[3], self.restrictionSites)
+        return "%s\t%s:%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (
+                sequence, self.chrom, self.start, self.tale1.exonNum, self.cluster, 
+                len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], 
+                self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], 
+                self.tale2.offTargetsMM[2], self.tale1.offTargetsMM[3], self.tale2.offTargetsMM[3], 
+                self.restrictionSites)
 
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -1245,7 +1252,7 @@ def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets,
         # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 3 mismatches
         command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, (PAMlength + 11), maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
     else:
-        command = "%s -v %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
+        command = "%s -v %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, maxMismatches, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
 
     if ISOFORMS: # When ISFORMS we don't check reverse complement 
         command = command + "--norc "
@@ -1262,28 +1269,45 @@ def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets,
     return bowtieResultsFile
 
 
+
 def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, 
-                backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM, scoringMethod=None, 
+                backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM, mode, scoringMethod=None, 
                 genome=None, gene=None, isoform=None, gene_isoforms=None):
     """ Parses bowtie hits and build list of guides"""
     
     currGuide = None
     guideList = []
+    
+    sam = pandas.read_csv(bowtieResultsFile, sep = '\t', names = list(range(14)),
+                          header = None, index_col = False)
+    if mode: # Cas9, Cpf1, Nickase and not ISOFORMS, TALEN
+        sam[14] = sam[0].str[-(len(PAM) + 1):]
+        sam[0] = sam[0].str[:-(len(PAM) + 1)]
+        samName = sam.groupby(0).apply(lambda x, m = maxOffTargets: any(x.iloc[:, 14].value_counts() >= m))
+        sam = sam.drop([14], axis = 1)
+        
+        sam = sam.groupby([0, 1, 2, 3]).apply(# remove duplicates
+            lambda x: x.sort_values(by = 11).iloc[0])
+        sam = sam.sort_values(by = [0, 11, 1, 2, 3])
+        sam = sam.reset_index(drop = True)
+    
+    for idx, row in sam.iterrows():
+        line = list(row)
+        if line[12] != line[12]:
+            line = line[:-2]
 
-    with open(bowtieResultsFile, 'rb') as bowtieFile:  
-        reader = csv.reader(bowtieFile, delimiter='\t', quoting=csv.QUOTE_NONE)
+        #  Encountered a new guide RNA (not a new hit for the same guide)
+        elements = line[0].split(":") #removes from name 5' and 3' tails
+        name = ":".join(elements[0:3])
+        if currGuide == None or name != currGuide.name:
+            currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, 
+                                   backbone, PAM, replace5prime, scoringMethod, 
+                                   genome, gene, isoform, gene_isoforms, 
+                                   isKmaxed = samName[line[0]] if mode else False)
+            guideList.append(currGuide)
 
-        for line in reader:
-            #  Encountered a new guide RNA (not a new hit for the same guide)
-            elements = line[0].split(":") #removes from name 5' and 3' tails
-            name = ":".join(elements[0:3])
-            if currGuide == None or name != currGuide.name:
-                currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, 
-                                       backbone, PAM, replace5prime, scoringMethod, genome, gene, isoform, gene_isoforms)
-                guideList.append(currGuide)
-
-            # Adds hit to off-target list of current guide.
-            currGuide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, countMM)
+        # Adds hit to off-target list of current guide.
+        currGuide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, countMM)
         
    
     for guideNum in range(0, len(guideList)):
@@ -1391,7 +1415,7 @@ def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, max
         sys.stderr.write("Running bowtie on primers failed\n");
         sys.exit(EXIT['BOWTIE_PRIMER_ERROR']);
 
-    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, False, [], [], False, False, None, None, maxOffTargets, None, None, None, None, None)
+    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, False, [], False, False, None, None, maxOffTargets, None, None, None, False, None, None)
 
 
 def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
@@ -1712,6 +1736,42 @@ def comaprePAM(basePAM, baseDNA):
 
     return False
 
+
+codes = {
+    "A": ["A"],
+    "C": ["C"],
+    "T": ["T"],
+    "G": ["G"],
+    "N": ["A", "C", "T", "G"],
+    "W": ["A", "T"],
+    "S": ["C", "G"],
+    "M": ["A", "C"],
+    "K": ["G", "T"],
+    "R": ["A", "G"],
+    "Y": ["C", "T"],
+    "B": ["C", "T", "G"],
+    "D": ["A", "T", "G"],
+    "H": ["A", "C", "T"],
+    "V": ["A", "C", "G"]
+}
+
+def permPAM(PAM):
+    PAM = PAM.upper()
+    for i in range(len(PAM) - 1):
+        if i == 0:
+            comb = codes[PAM[0]]
+            new_comb = []
+        else:
+            comb = new_comb
+            new_comb = []
+            
+        for j in codes[PAM[i + 1]]:
+            for c in comb:
+                new_comb.append(c + j)
+                
+    return new_comb
+
+
 #####################
 ##
 ## CPF1 SPECIFIC FUNCTIONS
@@ -1734,9 +1794,18 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
             break
                 
     if add:
-        dna = dna.reverse_complement() if not ISOFORMS else dna
-        fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
-        return True
+        if ISOFORMS:
+            fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+            return True
+        else:
+            dna = dna.reverse_complement()
+            pam_comb = permPAM(revCompPAM)
+            for p in pam_comb:
+                fastaFile.write('>%s_%d-%d:%s:%s:+:%s\n%s\n' % (
+                                name, num, num+guideSize, downstream5prim, downstream3prim, 
+                                p, dna[:gLen] + p))
+            return True
+        
     
     add = True
     
@@ -1748,8 +1817,14 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
             break
     
     if add and not ISOFORMS:
-        #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
-        fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
+        pam_comb = permPAM(revCompPAM)
+        for p in pam_comb:
+            #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
+            fastaFile.write('>%s_%d-%d:%s:%s:-:%s\n%s\n' % (
+                            name, num, num+guideSize, 
+                            Seq(downstream3prim).reverse_complement(), 
+                            Seq(downstream5prim).reverse_complement(), 
+                            p, dna[:gLen] + p))
         return True
 
     return False
@@ -1782,9 +1857,19 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
         # rather than end of the sequence
         # not in isoforms case as we don't search reverse complement
         if add:
-            dna = dna.reverse_complement() if not ISOFORMS else dna
-            fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
-            return True
+            if ISOFORMS:
+                fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+                return True
+            else:
+                # all combinations of possible PAMs
+                dna = dna.reverse_complement()
+                pam_comb = permPAM(revCompPAM)
+                
+                for p in pam_comb:
+                    fastaFile.write('>%s_%d-%d:%s:%s:+:%s\n%s\n' % (
+                                    name, num, num+guideSize, downstream5prim, downstream3prim, 
+                                    p, p + dna[len(revCompPAM):]))
+                return True
 
     if str(dna[-2:].reverse_complement()) in allowed and not ISOFORMS:
         add = True
@@ -1797,8 +1882,14 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
                 break
 
         if add:
-            #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
-            fastaFile.write('>%s_%d-%d:%s:%s:-\n%s\n' % (name, num, num+guideSize, Seq(downstream3prim).reverse_complement(), Seq(downstream5prim).reverse_complement(), dna))
+            pam_comb = permPAM(revCompPAM)
+            for p in pam_comb:
+                #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
+                fastaFile.write('>%s_%d-%d:%s:%s:-:%s\n%s\n' % (
+                                name, num, num+guideSize, 
+                                Seq(downstream3prim).reverse_complement(), 
+                                Seq(downstream5prim).reverse_complement(), 
+                                p, p + dna[len(revCompPAM):]))
             return True
 
     return False
@@ -2523,6 +2614,7 @@ def main():
                                   args.genome, int(args.maxMismatches))
     results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, 
                           args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, 
+                          args.MODE != TALENS and not ISOFORMS,
                           args.scoringMethod, args.genome, gene, isoform, gene_isoforms)  # TALENS: MAKE_PAIRS + CLUSTER
 
     if args.rm1perfOff and args.fasta:
