@@ -705,7 +705,14 @@ class Pair:
         # This creates a tab delimited list of output, with the final column as a semicolon-separated list of REs that cut in the spacer        
         sequence = str(self.tale1.guideSeq) + "*" + self.spacerSeq + "*" + str(self.tale2.guideSeq)
 
-        return "%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (sequence, self.chrom, self.start, self.tale1.exonNum, self.tale1.rvd, self.tale2.rvd, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], self.tale1.offTargetsMM[3], self.tale2.offTargetsMM[3], self.restrictionSites)
+        return "%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (
+                sequence, self.chrom, self.start, self.tale1.exonNum, self.tale1.rvd, 
+                self.tale2.rvd, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], 
+                self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], 
+                self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], 
+                ">=" + str(self.tale1.offTargetsMM[3]) if self.tale1.isKmaxed else self.tale1.offTargetsMM[3], 
+                ">=" + str(self.tale2.offTargetsMM[3]) if self.tale2.isKmaxed else self.tale2.offTargetsMM[3], 
+                self.restrictionSites)
 
 
     def asOffTargetString(self, label, maxOffTargets):
@@ -788,7 +795,9 @@ class Nickase:
                 sequence, self.chrom, self.start, self.tale1.exonNum, self.cluster, 
                 len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], 
                 self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], 
-                self.tale2.offTargetsMM[2], self.tale1.offTargetsMM[3], self.tale2.offTargetsMM[3], 
+                self.tale2.offTargetsMM[2], 
+                ">=" + str(self.tale1.offTargetsMM[3]) if self.tale1.isKmaxed else self.tale1.offTargetsMM[3], 
+                ">=" + str(self.tale2.offTargetsMM[3]) if self.tale2.isKmaxed else self.tale2.offTargetsMM[3],
                 self.restrictionSites)
 
 
@@ -1280,6 +1289,8 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
     
     sam = pandas.read_csv(bowtieResultsFile, sep = '\t', names = list(range(14)),
                           header = None, index_col = False)
+    samName = sam.iloc[:, 0].value_counts()
+    samName = samName >= maxOffTargets
     if mode: # Cas9, Cpf1, Nickase and not ISOFORMS, TALEN
         sam[14] = sam[0].str[-(len(PAM) + 1):]
         sam[0] = sam[0].str[:-(len(PAM) + 1)]
@@ -1299,11 +1310,16 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
         #  Encountered a new guide RNA (not a new hit for the same guide)
         elements = line[0].split(":") #removes from name 5' and 3' tails
         name = ":".join(elements[0:3])
+        isKmaxed = samName[line[0]]
+        line[0] = ":".join(elements[0:6])
+        if len(elements) == 7 and line[1] == 16:
+            elements[6] = str(Seq(elements[6]).reverse_complement())
         if currGuide == None or name != currGuide.name:
-            currGuide = guideClass(line[0], line[1], len(line[9]), line[9], scoreGC, scoreSelfComp, 
+            currGuide = guideClass(line[0], line[1], len(line[9]),
+                                   elements[6] if len(elements) == 7 else line[9], scoreGC, scoreSelfComp,
                                    backbone, PAM, replace5prime, scoringMethod, 
-                                   genome, gene, isoform, gene_isoforms, 
-                                   isKmaxed = samName[line[0]] if mode else False)
+                                   genome, gene, isoform, gene_isoforms,
+                                   isKmaxed = isKmaxed)
             guideList.append(currGuide)
 
         # Adds hit to off-target list of current guide.
@@ -1801,9 +1817,9 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
             dna = dna.reverse_complement()
             pam_comb = permPAM(revCompPAM)
             for p in pam_comb:
-                fastaFile.write('>%s_%d-%d:%s:%s:+:%s\n%s\n' % (
+                fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
                                 name, num, num+guideSize, downstream5prim, downstream3prim, 
-                                p, dna[:gLen] + p))
+                                dna, p, dna[:gLen] + p))
             return True
         
     
@@ -1820,11 +1836,11 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
         pam_comb = permPAM(revCompPAM)
         for p in pam_comb:
             #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
-            fastaFile.write('>%s_%d-%d:%s:%s:-:%s\n%s\n' % (
+            fastaFile.write('>%s_%d-%d:%s:%s:-:%s:%s\n%s\n' % (
                             name, num, num+guideSize, 
                             Seq(downstream3prim).reverse_complement(), 
                             Seq(downstream5prim).reverse_complement(), 
-                            p, dna[:gLen] + p))
+                            dna, p, dna[:gLen] + p))
         return True
 
     return False
@@ -1866,9 +1882,9 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
                 pam_comb = permPAM(revCompPAM)
                 
                 for p in pam_comb:
-                    fastaFile.write('>%s_%d-%d:%s:%s:+:%s\n%s\n' % (
+                    fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
                                     name, num, num+guideSize, downstream5prim, downstream3prim, 
-                                    p, p + dna[len(revCompPAM):]))
+                                    dna, p, p + dna[len(revCompPAM):]))
                 return True
 
     if str(dna[-2:].reverse_complement()) in allowed and not ISOFORMS:
@@ -1885,11 +1901,11 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
             pam_comb = permPAM(revCompPAM)
             for p in pam_comb:
                 #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
-                fastaFile.write('>%s_%d-%d:%s:%s:-:%s\n%s\n' % (
+                fastaFile.write('>%s_%d-%d:%s:%s:-:%s:%s\n%s\n' % (
                                 name, num, num+guideSize, 
                                 Seq(downstream3prim).reverse_complement(), 
                                 Seq(downstream5prim).reverse_complement(), 
-                                p, p + dna[len(revCompPAM):]))
+                                dna, p, p + dna[len(revCompPAM):]))
             return True
 
     return False
@@ -2320,14 +2336,8 @@ def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc
 
     seq_name = "sequence"
     sequence = ""
-    fastaFile = open(fastaFile, 'r')
-    for line in fastaFile:
-        if line[0] == ">":
-            seq_name = '_'.join(line[1:].strip().split())
-        else:
-            sequence += line.rstrip()        
-    fastaFile.close()
-
+    fastaFile = list(SeqIO.parse(fastaFile, 'fasta'))
+    seq_name, sequence = fastaFile[0].id, str(fastaFile[0].seq)
     
     name = "%s:0-%s" % (seq_name, len(sequence))
     idName = "C:" + name 
@@ -2476,6 +2486,18 @@ def mode_select(var, index, MODE):
     sys.exit(EXIT['PYTHON_ERROR'])
 
 
+def nanoFilter(x):
+    if x.folding > 0:
+        return False
+    if x.scoringMethod in ["DOENCH_2016", "ALL"] and x.CoefficientsScore["DOENCH_2016"] < 0.2:
+        return False
+    if x.scoringMethod in ["DOENCH_2014", "ALL"] and x.CoefficientsScore["DOENCH_2014"] < 0.2:
+        return False
+    if x.scoringMethod in ["XU_2015", "ALL"] and x.CoefficientsScore["XU_2015"] < 0.2:
+        return False
+    return True
+
+
 def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
@@ -2516,6 +2538,7 @@ def main():
     parser.add_argument("--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
     parser.add_argument("--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
     parser.add_argument("--isoforms", default = False, action="store_true", help="Search for offtargets on the transcriptome.")
+    parser.add_argument("--nano", default = False, action="store_true", help="Will prefilter guides based on specifications from Oxford Nanopore for nanopore enrichment using CRISPR.")
     args = parser.parse_args()
     
     # set isoforms to global as it is influencing many steps
@@ -2669,6 +2692,13 @@ def main():
                     guide.score = guide.score - (guide.CoefficientsScore["CHARI_2015"]/100) * SCORE['COEFFICIENTS']
         except:
             pass
+        
+        
+    if args.nano: # filtering for Oxford Nanopore
+        results = filter(nanoFilter, results)
+    if len(results) == 0:
+        sys.stderr.write("No guides could be generated for this region using nanopore enrichment filter.\n")
+        sys.exit(EXIT['GENE_ERROR'])
 
 
     if args.MODE == CRISPR or args.MODE == CPF1 or ISOFORMS:

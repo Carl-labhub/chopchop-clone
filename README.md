@@ -1,5 +1,7 @@
 # CHOPCHOP script
-#### There exists website version of this tool with specifically designed visualization of guides under [chopchop.cbu.uib.no](http://chopchop.cbu.uib.no) 
+#### There exists website version of this tool with specifically designed visualization of guides under [chopchop.cbu.uib.no](http://chopchop.cbu.uib.no)
+
+#### This repository is open sourced as specified in the LICENSE file. It is Apache License 2.0.
 
 #### About:
 CHOPCHOP is a python script that allows quick and customizable design of guide RNA. We support selecting target sites for CRISPR/Cas9, CRISPR/Cpf1 or TALEN with wide range of customization. We even support C2c2 for isoform targeting.
