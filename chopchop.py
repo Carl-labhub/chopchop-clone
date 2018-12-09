@@ -36,14 +36,10 @@ from subprocess import Popen, PIPE
 ##
 ISOFORMS = False
 
-# PATHs
-PRIMER3 = "./primer3_core"
-BOWTIE = "bowtie/bowtie"
-TWOBITTOFA = "./twoBitToFa"
-TWOBIT_INDEX_DIR = "/your/full/path/to/2bit_folder"
-BOWTIE_INDEX_DIR = "/your/full/path/to/ebwt_folder"
-ISOFORMS_INDEX_DIR = "/your/full/path/to/ebwt_transcriptome_folder" #only when using --isoforms
-GENE_TABLE_INDEX_DIR = "/your/full/path/to/genePred_folder"
+# CONFIG
+config_path = "config_local.json" if os.path.isfile("config_local.json") else "config.json"
+with open(config_path) as f:
+    CONFIG = json.load(f)
 
 # Program mode
 CRISPR = 1
@@ -1203,7 +1199,7 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
 
         # Run twoBitToFa program to get actual dna sequence corresponding to input genomic coordinates
         # Popen runs twoBitToFa program. PIPE pipes stdout.
-        prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (TWOBITTOFA, chrom, start, finish, indexDir, genome, outputDir), stdout = PIPE, shell=True)    
+        prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (CONFIG["PATH"]["TWOBITTOFA"], chrom, start, finish, indexDir, genome, outputDir), stdout = PIPE, shell=True)
 
         # Communicate converts stdout to a string
         output = prog.communicate()  
@@ -1259,9 +1255,9 @@ def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets,
     if uniqueMethod_Cong and not ISOFORMS: #When ISOFORMS dna string is not reverse complemented and Cong can't be used
         # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the -n option. Outside of that seed, up to 2 mismatches are searched. 
         # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 3 mismatches
-        command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, (PAMlength + 11), maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
+        command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (CONFIG["PATH"]["BOWTIE"], (PAMlength + 11), maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
     else:
-        command = "%s -v %d --sam-nohead -k %d %s/%s -f %s -S %s " % (BOWTIE, maxMismatches, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
+        command = "%s -v %d --sam-nohead -k %d %s/%s -f %s -S %s " % (CONFIG["PATH"]["BOWTIE"], maxMismatches, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
 
     if ISOFORMS: # When ISFORMS we don't check reverse complement 
         command = command + "--norc "
@@ -1407,7 +1403,7 @@ def get_primer_query_sequence_2bit(target, outputDir, flank, genome, twoBitToFaI
         seqLenBeforeTarget -= abs(s)
         s = 0
 
-    prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err" % (TWOBITTOFA, target.chrom, s, target.end+flank, twoBitToFaIndexDir, genome, outputDir), stdout = PIPE, shell=True)
+    prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err" % (CONFIG["PATH"]["TWOBITTOFA"], target.chrom, s, target.end+flank, twoBitToFaIndexDir, genome, outputDir), stdout = PIPE, shell=True)
     output = prog.communicate()  
     
     if (prog.returncode != 0):
@@ -1423,7 +1419,7 @@ def get_primer_query_sequence_2bit(target, outputDir, flank, genome, twoBitToFaI
 
 
 def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, maxOffTargets):
-    command = "%s -v 0 --best --sam-nohead -k 10 %s/%s -f %s -S %s/primer_results.sam 2> %s/bowtie_primers.err" % (BOWTIE, bowtieIndexDir, genome, primerFastaFileName, outputDir, outputDir)
+    command = "%s -v 0 --best --sam-nohead -k 10 %s/%s -f %s -S %s/primer_results.sam 2> %s/bowtie_primers.err" % (CONFIG["PATH"]["BOWTIE"], bowtieIndexDir, genome, primerFastaFileName, outputDir, outputDir)
     prog = Popen(command, shell=True)
     prog.wait()
 
@@ -1637,7 +1633,7 @@ PRIMER_EXPLAIN_FLAG=1
     f.write("=\n")
     f.close()
 
-    command = "%s < %s 2>> %s/primer3.error" % (PRIMER3, primer3InputFile, outputDir)
+    command = "%s < %s 2>> %s/primer3.error" % (CONFIG["PATH"]["PRIMER3"], primer3InputFile, outputDir)
     # sys.stderr.write("%s\n" % command)
     prog = Popen(command, stdout = PIPE, shell=True)
     output = prog.communicate()
@@ -2610,7 +2606,7 @@ def main():
         db = cdb.cursor()
         use_db = True
     else:
-        db = "%s/%s.gene_table" % (GENE_TABLE_INDEX_DIR, args.genome)
+        db = "%s/%s.gene_table" % (CONFIG["PATH"]["GENE_TABLE_INDEX_DIR"], args.genome)
         use_db = False
 
     ## Create output directory if it doesn't exist
@@ -2622,7 +2618,7 @@ def main():
         sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
     else:
         targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
-        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, TWOBIT_INDEX_DIR, args.genome, strand)
+        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.genome, strand)
     
     gene, isoform, gene_isoforms = geneIsoforms(args.targets, db) if ISOFORMS else (None, None, set())
     
@@ -2633,7 +2629,7 @@ def main():
         
     # Run bowtie and get results
     bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, 
-                                  int(args.maxOffTargets), ISOFORMS_INDEX_DIR if ISOFORMS else BOWTIE_INDEX_DIR, 
+                                  int(args.maxOffTargets), CONFIG["PATH"]["ISOFORMS_INDEX_DIR"] if ISOFORMS else CONFIG["PATH"]["BOWTIE_INDEX_DIR"],
                                   args.genome, int(args.maxMismatches))
     results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, 
                           args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, 
@@ -2744,9 +2740,9 @@ def main():
 
     if args.makePrimers:
         if args.fasta:
-            make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, BOWTIE_INDEX_DIR, fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
+            make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
         else:
-            make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, BOWTIE_INDEX_DIR, TWOBIT_INDEX_DIR, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
+            make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
 
 
     ## Print results 
