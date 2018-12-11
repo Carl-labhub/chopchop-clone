@@ -21,6 +21,7 @@ import scipy.stats as ss
 
 from collections import defaultdict
 from Bio import SeqIO
+from Bio.SeqUtils import GC
 from Bio.Restriction import Analysis, RestrictionBatch
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -1790,12 +1791,19 @@ def permPAM(PAM):
 ##
 
 
-def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM):
+def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM,
+    filterGCmin, filterGCmax, filterSelfCompMax, replace5prime = None, backbone = None):
     """ Evaluates an k-mer as a potential Cpf1 target site """
 
     gLen = guideSize-len(PAM)
     revCompPAM = str(Seq(PAM).reverse_complement())
     dna = Seq(dna)
+
+    if replace5prime:
+        fwd = dna[len(PAM):-len(replace5prime)] + replace5prime  # Replace the 2 first bases with e.g. "GG"
+    else:
+        fwd = dna[len(PAM):]  # Do not include PAM motif in folding calculations
+
     
     add = True
     for pos in range(len(PAM)):
@@ -1804,6 +1812,20 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
         else:
             add = False
             break
+
+    if add and (filterGCmin != 0 or filterGCmax != 100):
+        gc = GC(dna[len(PAM):])
+        if gc < filterGCmin or gc > filterGCmax:
+            add = False
+
+    if add and filterSelfCompMax != -1:
+        if replace5prime:
+            fwd = replace5prime + dna[len(PAM):-len(replace5prime)]
+        else:
+            fwd = dna[len(PAM):]
+        folding = selfComp(fwd, backbone)
+        if folding > filterSelfCompMax:
+            add = False
                 
     if add:
         if ISOFORMS:
@@ -1827,6 +1849,20 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
         else:
             add = False
             break
+
+    if add and (filterGCmin != 0 or filterGCmax != 100):
+        gc = GC(dna.reverse_complement()[len(PAM):])
+        if gc < filterGCmin or gc > filterGCmax:
+            add = False
+
+    if add and filterSelfCompMax != -1:
+        if replace5prime:
+            fwd = replace5prime + dna.reverse_complement()[len(PAM):-len(replace5prime)]
+        else:
+            fwd = dna.reverse_complement()[len(PAM):]
+        folding = selfComp(fwd, backbone)
+        if folding > filterSelfCompMax:
+            add = False
     
     if add and not ISOFORMS:
         pam_comb = permPAM(revCompPAM)
@@ -1847,8 +1883,21 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
 ## CRISPR SPECIFIC FUNCTIONS
 ##
 
+def selfComp(fwd, backbone):
+    rvs = str(fwd.reverse_complement())
+    fwd = str(fwd)
+    L = len(fwd) - STEM_LEN - 1
+    folding = 0
+    for i in range(0, len(fwd) - STEM_LEN):
+        if gccontent(fwd[i:i + STEM_LEN]) >= 0.5:
+            if fwd[i:i + STEM_LEN] in rvs[0:(L - i)] or any(
+                    [fwd[i:i + STEM_LEN] in item for item in backbone]):
+                folding += 1
 
-def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed, PAM):
+    return folding
+
+def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed, PAM,
+                         filterGCmin, filterGCmax, filterSelfCompMax, replace5prime=None, backbone=None):
     """ Evaluates an k-mer as a potential CRISPR target site """
 
     gLen = guideSize-len(PAM)
@@ -1863,6 +1912,20 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
             else:
                 add = False
                 break
+
+        if add and (filterGCmin != 0 or filterGCmax != 100):
+            gc = GC(dna[0:-len(PAM)]) #FIX EVERYWHERE GC content does not assumes 5' replacement
+            if gc < filterGCmin or gc > filterGCmax:
+                add = False
+
+        if add and filterSelfCompMax != -1:
+            if replace5prime:
+                fwd = replace5prime + dna[len(replace5prime):-len(PAM)]
+            else:
+                fwd = dna[0:-len(PAM)]
+            folding = selfComp(fwd, backbone)
+            if folding > filterSelfCompMax:
+                add = False
             
         # in order to control the number of mismatches to search in the last 8 or 3 bps, 
         # need to reverse complement so the seed region can be at the start
@@ -1892,6 +1955,20 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
             else:
                 add = False
                 break
+
+        if add and (filterGCmin != 0 or filterGCmax != 100):
+            gc = GC(dna[len(PAM):])
+            if gc < filterGCmin or gc > filterGCmax:
+                add = False
+
+        if add and filterSelfCompMax != -1:
+            if replace5prime:
+                fwd = replace5prime + dna.reverse_complement()[len(PAM):-len(replace5prime)]
+            else:
+                fwd = dna.reverse_complement()[len(PAM):]
+            folding = selfComp(fwd, backbone)
+            if folding > filterSelfCompMax:
+                add = False
 
         if add:
             pam_comb = permPAM(revCompPAM)
@@ -2411,9 +2488,8 @@ def subsetExons(exons, targets):
 
 def connect_db(database_string):
     import MySQLdb
-    
-    m = re.compile("(\w+):(\w+)@(\w+)/(\w+)").match(database_string)
 
+    m = re.compile("(\w+):(\w+)@(\w+)/(\w+)").search(database_string)
     if not m:
         sys.stderr.write("Wrong syntax for connection string: %s\n" % database_string)
         sys.exit(EXIT["DB_ERROR"])
@@ -2482,18 +2558,6 @@ def mode_select(var, index, MODE):
     sys.exit(EXIT['PYTHON_ERROR'])
 
 
-def nanoFilter(x):
-    if x.folding > 0:
-        return False
-    if x.scoringMethod in ["DOENCH_2016", "ALL"] and x.CoefficientsScore["DOENCH_2016"] < 0.2:
-        return False
-    if x.scoringMethod in ["DOENCH_2014", "ALL"] and x.CoefficientsScore["DOENCH_2014"] < 0.2:
-        return False
-    if x.scoringMethod in ["XU_2015", "ALL"] and x.CoefficientsScore["XU_2015"] < 0.2:
-        return False
-    return True
-
-
 def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
@@ -2534,7 +2598,9 @@ def main():
     parser.add_argument("--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
     parser.add_argument("--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
     parser.add_argument("--isoforms", default = False, action="store_true", help="Search for offtargets on the transcriptome.")
-    parser.add_argument("--nano", default = False, action="store_true", help="Will prefilter guides based on specifications from Oxford Nanopore for nanopore enrichment using CRISPR.")
+    parser.add_argument("--filterGCmin", default=0, type=int, help="Minimum required GC percentage. Default is 0.")
+    parser.add_argument("--filterGCmax", default=100, type=int, help="Maximum allowed GC percentage. Default is 100.")
+    parser.add_argument("--filterSelfCompMax", default=-1, type=int, help="Maximum acceptable Self-complementarity score. Default is -1, no filter.")
     args = parser.parse_args()
     
     # set isoforms to global as it is influencing many steps
@@ -2580,12 +2646,19 @@ def main():
         # Set mismatch checking policy
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
         allowed = getAllowedFivePrime(args.fivePrimeEnd)
-        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
+        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(
+            name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim,
+            allowed=allowed, PAM=args.PAM,
+            filterGCmin=args.filterGCmin, filterGCmax=args.filterGCmax,
+            filterSelfCompMax=args.filterSelfCompMax, replace5prime=args.replace5P, backbone=args.backbone)
         guideClass = Cas9 if not ISOFORMS else Guide
         sortOutput = sort_CRISPR_guides
     elif args.MODE == CPF1:
         (allowedMM, countMM) = getCpf1MismatchVectors(args.PAM, args.guideSize)
-        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM=args.PAM)
+        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CPF1_sequence(
+            name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM=args.PAM,
+            filterGCmin=args.filterGCmin, filterGCmax=args.filterGCmax,
+            filterSelfCompMax=args.filterSelfCompMax, replace5prime=args.replace5P, backbone=args.backbone)
         guideClass = Guide
         sortOutput = sort_CRISPR_guides
     elif args.MODE == TALENS:
@@ -2596,7 +2669,10 @@ def main():
     elif args.MODE == NICKASE:
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, args.uniqueMethod_Cong)
         allowed = getAllowedFivePrime(args.fivePrimeEnd)
-        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM)
+        evalSequence = lambda name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim: eval_CRISPR_sequence(
+            name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, allowed=allowed, PAM=args.PAM,
+            filterGCmin=args.filterGCmin, filterGCmax=args.filterGCmax,
+            filterSelfCompMax=args.filterSelfCompMax, replace5prime=args.replace5P, backbone=args.backbone)
         guideClass = Cas9
         sortOutput = sort_TALEN_pairs
 
@@ -2688,13 +2764,6 @@ def main():
                     guide.score = guide.score - (guide.CoefficientsScore["CHARI_2015"]/100) * SCORE['COEFFICIENTS']
         except:
             pass
-        
-        
-    if args.nano: # filtering for Oxford Nanopore
-        results = filter(nanoFilter, results)
-    if len(results) == 0:
-        sys.stderr.write("No guides could be generated for this region using nanopore enrichment filter.\n")
-        sys.exit(EXIT['GENE_ERROR'])
 
 
     if args.MODE == CRISPR or args.MODE == CPF1 or ISOFORMS:
