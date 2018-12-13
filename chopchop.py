@@ -8,7 +8,6 @@ import re
 import os
 import sys
 import csv
-import copy
 import math
 import json
 import string
@@ -49,7 +48,7 @@ CPF1 = 3
 NICKASE = 4
 
 # Maximum genomic region that can be searched
-TARGET_MAX = 20000
+TARGET_MAX = 40000
 
 # Defaults
 CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
@@ -206,12 +205,6 @@ PRIMER3_CONFIG = {"PRIMER_OPT_SIZE" : "22",
                   "PRODUCT_SIZE_MIN" : "100",
                   "PRODUCT_SIZE_MAX" : "290"}
 
-
-# WIDTH
-VIS_WIDTH = {"UTR" : 10,
-             "CDS" : 20}
-
-
 # SELF-COMPLEMENTARITY
 STEM_LEN = 4
 
@@ -221,9 +214,9 @@ STEM_LEN = 4
 ##
 
 class Hit:
-    """Creates class for each hit from bowtie."""    
+    """Creates class for each hit from bowtie."""
 
-    def __init__(self, line):    
+    def __init__(self, line):
         self.flagSum = int(line[1])
         self.chrom = line[2]
         self.start = int(line[3])
@@ -234,7 +227,7 @@ class Hit:
         self.mismatchCorrected = False
 
 
-    def calc_mismatchPos (self):        
+    def calc_mismatchPos (self):
         """ Updates the sequence parsed from the SAM output to include the mismatches """
 
         lastDigit = len(self.mismatchPos)-1
@@ -250,34 +243,34 @@ class Hit:
 
                 # If the character is a digit, check if the next character is a digit (>9) and add number to total
                 if self.mismatchPos[c].isdigit():
-                    
+
                     if c != lastDigit and self.mismatchPos[c+1].isdigit():
                         currTotal += (int(self.mismatchPos[c])*10)
                     else:
                         currTotal += int(self.mismatchPos[c])
                         guideCurr += self.matchSeq[guideIndex:currTotal]
                         guideIndex = currTotal
-                        
+
                 # if character is a letter, add one to total
                 else:
                     guideCurr += self.mismatchPos[c].lower()
                     currTotal += 1
                     guideIndex += 1
-               
+
 
             self.matchSeq = guideCurr
-            
-  
-    # Specifying how to print items in list of off-targets   
+
+
+    # Specifying how to print items in list of off-targets
     def __str__(self):
         if not self.mismatchCorrected:
             self.calc_mismatchPos()
             self.mismatchCorrected = True
-            
+
         return "%s:%s\t%s" % (self.chrom, self.start, self.matchSeq)
 
     def asOffTargetString(self, label, maxOffTargets):
-        if self.mismatch == "XM:i:%s" % maxOffTargets:               
+        if self.mismatch == "XM:i:%s" % maxOffTargets:
             return "%s,>%s across the genome,0-2,n/a " % (label, maxOffTargets)
         else:
             if not self.mismatchCorrected:
@@ -291,10 +284,10 @@ class Guide(object):
     """ This defines a class for each guide. The (off-target) hits for each guide form a separate class. The functions "addOffTarget" and
     "sort_offTargets" applies to just the Tale class """
 
-    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp, 
-                 backbone_regions, PAM, replace5prime=None, scoringMethod=None, 
+    def __init__(self, name, flagSum, guideSize, guideSeq, scoreGC, scoreSelfComp,
+                 backbone_regions, PAM, replace5prime=None, scoringMethod=None,
                  genome=None, gene=None, isoform=None, gene_isoforms=None, isKmaxed = False):
-        
+
         self.isKmaxed = isKmaxed # to print possibility of more mismatches
         self.scoringMethod = scoringMethod
         self.genome = genome
@@ -310,9 +303,9 @@ class Guide(object):
         self.ID = elements[0]
         self.chrom = elements[1]
         coord = elements[2]
-        
+
         self.name = ":".join(elements[0:3])
-        
+
         if len(elements) > 3:
             self.downstream5prim = elements[3]
             self.downstream3prim = elements[4]
@@ -321,7 +314,7 @@ class Guide(object):
             self.downstream5prim = ''
             self.downstream3prim = ''
             self.strand = None
-            
+
         self.guideSize = guideSize
         self.targetSize = guideSize
         self.cluster = -1
@@ -332,19 +325,18 @@ class Guide(object):
         self.offTargetsMM = [0] * 4
 
         # The location of the last digit of the exon start in the name string
-        mid = coord.find('-')        
+        mid = coord.find('-')
         # The location of the first digit of the guide position in the exon
         end = (coord.find('_'))+1
-                
+
         # The full position of the guide in the exon
         region = coord[end:]
-        
+
         # The location of the last digit of the guide position in the exon
         location = region.find('-')
 
         # The start of the exon containing the guide
         self.exonStart = int(coord[0:mid])
-        self.exonNum = None
 
         # The number of bases after the exon start
         guidePos = int(region[:location])+1
@@ -373,34 +365,34 @@ class Guide(object):
             self.calcSelfComplementarity(scoreSelfComp, backbone_regions, PAM, replace5prime)
         else:
             self.folding ="N/A"
-            
+
         # Scoring
         self.calcGCContent(scoreGC)
 
 
-    def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):   
+    def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):
         if replace5prime:
             fwd = self.strandedGuideSeq[len(PAM):-len(replace5prime)] + replace5prime #Replace the 2 first bases with e.g. "GG"
         else:
             fwd = self.guideSeq[len(PAM):] # Do not include PAM motif in folding calculations
 
         rvs = str(Seq(fwd).reverse_complement())
-        L = len(fwd)-STEM_LEN-1            
+        L = len(fwd)-STEM_LEN-1
 
         self.folding = 0
-        
+
         for i in range(0,len(fwd)-STEM_LEN):
             if gccontent(fwd[i:i+STEM_LEN]) >= 0.5:
                 if fwd[i:i+STEM_LEN] in rvs[0:(L-i)] or any([fwd[i:i+STEM_LEN] in item for item in backbone_regions]):
                     #sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+STEM_LEN]))
                     self.folding += 1
-                    
+
         self.score += self.folding * SCORE['FOLDING']
 
 
     def calcGCContent(self, scoreGC):
         """ Calculate the GC content of the guide """
-        if self.PAM is not None and self.strandedGuideSeq is not None:    
+        if self.PAM is not None and self.strandedGuideSeq is not None:
             gSeq = self.strandedGuideSeq[len(self.PAM):]
             Gcount = gSeq.count('G')
             Ccount = gSeq.count('C')
@@ -413,33 +405,33 @@ class Guide(object):
                 self.score += SCORE['CRISPR_BAD_GC']
 
 
-    def addOffTarget(self, hit, checkMismatch, maxOffTargets, countMMPos):        
-        """ Add off target hits (and not original hit) to list for each guide RNA """    
+    def addOffTarget(self, hit, checkMismatch, maxOffTargets, countMMPos):
+        """ Add off target hits (and not original hit) to list for each guide RNA """
 
         hit_id = "%s:%s" % (hit.chrom, hit.start)
         nmiss = 0
         mm_pattern = re.compile('NM:i:(\d+)')
-       
+
         # If the hit is identical to the guide coord it is the original correct hit
         if self.chrom == hit.chrom and self.start == hit.start: # never true for isoforms
             # This is the original/main hit
             self.correct_hit = hit
             return
-        
+
         if ISOFORMS and self.isoform == hit.chrom and self.strandedGuideSeq == hit.matchSeq:
             # This is the original/main hit
             self.correct_hit = hit
             return
 
         # Do not count off targets twice, e.g. for TALENs valid on both strands.
-        if self.offTarget_hash.has_key(hit_id):  
+        if self.offTarget_hash.has_key(hit_id):
             return
 
         # Reverse count+allowed arrays if on the reverse strand
         if checkMismatch and hit.flagSum == 0 and not ISOFORMS:
             countMMPos = countMMPos[::-1]
 
-        self.offTarget_hash[hit_id] = hit         
+        self.offTarget_hash[hit_id] = hit
         if checkMismatch:
             MMs = get_mismatch_pos(hit.mismatchPos[5:])
             for mm in MMs:
@@ -455,21 +447,21 @@ class Guide(object):
             m = mm_pattern.match(opt)
             if m:
                 mm = int(m.group(1)) - nmiss
-                
+
                 # ugly repeat to save time from iterating all isoforms 
-                if ISOFORMS and checkMismatch: 
+                if ISOFORMS and checkMismatch:
                     if hit.chrom in self.gene_isoforms: # and hit.chrom not in self.offTargetsIso[mm]:
                         self.offTargetsIso[mm].add(hit.chrom)
                         # don't count/score isoform mismatches but display which isoforms have them
-                    else: 
+                    else:
                         self.offTargetsMM[mm] += 1
                         self.score += SINGLE_OFFTARGET_SCORE[mm]
-                else: 
+                else:
                     self.offTargetsMM[mm] += 1
                     self.score += SINGLE_OFFTARGET_SCORE[mm]
-                
-            if opt == "XM:i:" + str(maxOffTargets):  
-                self.score += SCORE['MAX_OFFTARGETS']                
+
+            if opt == "XM:i:" + str(maxOffTargets):
+                self.score += SCORE['MAX_OFFTARGETS']
                 self.offTargetsMM[0] += maxOffTargets
                 self.offTargetsMM[1] += maxOffTargets
                 self.offTargetsMM[2] += maxOffTargets
@@ -483,37 +475,37 @@ class Guide(object):
         self.sort_offTargets()
         return len(self.offTargets)
 
-        
+
     def sort_offTargets(self):
         """ Sort off-target hits according to chromosome and genomic coordinate """
 
         if self.offTargets_sorted:
-            return        
+            return
 
         self.offTargets = self.offTarget_hash.values()
-        self.offTargets = sorted(self.offTargets, key=attrgetter('chrom', 'start'))  
+        self.offTargets = sorted(self.offTargets, key=attrgetter('chrom', 'start'))
         self.offTargets_sorted = True
 
 
     def __str__(self):
         self.sort_offTargets()
         if ISOFORMS:
-            return "%s\t%s:%s\t%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, 
-                                                                                            self.chrom, self.start, self.exonNum, 
+            return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq,
+                                                                                            self.chrom, self.start,
                                                                                             self.gene, self.isoform,
-                                                                                            self.GCcontent, self.folding, 
-                                                                                            self.offTargetsMM[0], self.offTargetsMM[1], 
-                                                                                            self.offTargetsMM[2], self.offTargetsMM[3], 
-                                                                                            self.conserved, (",").join(set(self.offTargetsIso[0])), 
-                                                                                            (",").join(set(self.offTargetsIso[1])), 
-                                                                                            (",").join(set(self.offTargetsIso[2])), 
+                                                                                            self.GCcontent, self.folding,
+                                                                                            self.offTargetsMM[0], self.offTargetsMM[1],
+                                                                                            self.offTargetsMM[2], self.offTargetsMM[3],
+                                                                                            self.conserved, (",").join(set(self.offTargetsIso[0])),
+                                                                                            (",").join(set(self.offTargetsIso[1])),
+                                                                                            (",").join(set(self.offTargetsIso[2])),
                                                                                             (",").join(set(self.offTargetsIso[3])))
-        return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start, self.exonNum, 
-                                                                self.strand, self.GCcontent, self.folding, 
-                                                                self.offTargetsMM[0], self.offTargetsMM[1], 
-                                                                self.offTargetsMM[2], 
+        return "%s\t%s:%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start,
+                                                                self.strand, self.GCcontent, self.folding,
+                                                                self.offTargetsMM[0], self.offTargetsMM[1],
+                                                                self.offTargetsMM[2],
                                                                 ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3])
-                  
+
 
     def asOffTargetString(self, label, maxOffTargets):
         self.sort_offTargets()
@@ -544,21 +536,20 @@ class Cas9(Guide):
         if self.scoringMethod == "ALL":
             for met in ["XU_2015", "DOENCH_2014", "MORENO_MATEOS_2015", "G_20"]:
                 self.CoefficientsScore[met] = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[met])
-    
+
     def __str__(self):
         self.sort_offTargets()
         if self.scoringMethod == "ALL":
-            return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f" % (self.strandedGuideSeq, 
-                                                                                                        self.chrom, 
-                                                                                                        self.start, 
-                                                                                                        self.exonNum, 
-                                                                                                        self.strand, 
-                                                                                                        self.GCcontent, 
-                                                                                                        self.folding, 
-                                                                                                        self.offTargetsMM[0], 
-                                                                                                        self.offTargetsMM[1], 
-                                                                                                        self.offTargetsMM[2], 
-                                                                                                        ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3], 
+            return "%s\t%s:%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f" % (self.strandedGuideSeq,
+                                                                                                        self.chrom,
+                                                                                                        self.start,
+                                                                                                        self.strand,
+                                                                                                        self.GCcontent,
+                                                                                                        self.folding,
+                                                                                                        self.offTargetsMM[0],
+                                                                                                        self.offTargetsMM[1],
+                                                                                                        self.offTargetsMM[2],
+                                                                                                        ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3],
                                                                                                         self.CoefficientsScore["XU_2015"],
                                                                                                         self.CoefficientsScore["DOENCH_2014"],
                                                                                                         self.CoefficientsScore["DOENCH_2016"],
@@ -566,19 +557,18 @@ class Cas9(Guide):
                                                                                                         self.CoefficientsScore["CHARI_2015"],
                                                                                                         self.CoefficientsScore["G_20"])
         else:
-            return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq, 
-                                                                          self.chrom, 
-                                                                          self.start, 
-                                                                          self.exonNum, 
-                                                                          self.strand, 
-                                                                          self.GCcontent, 
-                                                                          self.folding, 
-                                                                          self.offTargetsMM[0], 
-                                                                          self.offTargetsMM[1], 
-                                                                          self.offTargetsMM[2], 
-                                                                          ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3], 
+            return "%s\t%s:%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq,
+                                                                          self.chrom,
+                                                                          self.start,
+                                                                          self.strand,
+                                                                          self.GCcontent,
+                                                                          self.folding,
+                                                                          self.offTargetsMM[0],
+                                                                          self.offTargetsMM[1],
+                                                                          self.offTargetsMM[2],
+                                                                          ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3],
                                                                           self.CoefficientsScore[self.scoringMethod])
-    
+
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):
         if replace5prime:
             fwd = replace5prime + self.strandedGuideSeq[len(replace5prime):-len(PAM)] # Replace the 2 first bases with e.g. "GG"
@@ -586,21 +576,21 @@ class Cas9(Guide):
             fwd = self.guideSeq[0:-len(PAM)] # Do not include PAM motif in folding calculations
 
         rvs = str(Seq(fwd).reverse_complement())
-        L = len(fwd)-STEM_LEN-1            
+        L = len(fwd)-STEM_LEN-1
 
         self.folding = 0
-        
+
         for i in range(0,len(fwd)-STEM_LEN):
             if gccontent(fwd[i:i+STEM_LEN]) >= 0.5:
                 if fwd[i:i+STEM_LEN] in rvs[0:(L-i)] or any([fwd[i:i+STEM_LEN] in item for item in backbone_regions]):
                     #sys.stderr.write("%s\t%s\n" % (fwd, fwd[i:i+STEM_LEN]))
                     self.folding += 1
-                    
+
         self.score += self.folding * SCORE['FOLDING']
 
     def calcGCContent(self, scoreGC):
         """ Calculate the GC content of the guide """
-        if self.PAM is not None and self.strandedGuideSeq is not None:    
+        if self.PAM is not None and self.strandedGuideSeq is not None:
             gSeq = self.strandedGuideSeq[0:-len(self.PAM)]
             Gcount = gSeq.count('G')
             Ccount = gSeq.count('C')
@@ -611,14 +601,14 @@ class Cas9(Guide):
         if scoreGC:
             if self.GCcontent > GC_HIGH or self.GCcontent < GC_LOW:
                 self.score += SCORE['CRISPR_BAD_GC']
-        
-        
+
+
 class Pair:
     """ Pair class for 2 TALEs that are the correct distance apart """
     def __init__(self, tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, g_RVD, minResSiteLen):
         self.tale1 = tale1
         self.tale2 = tale2
-        self.chrom = tale1.chrom 
+        self.chrom = tale1.chrom
         self.strand = tale1.strand
         self.ID = ""
         self.tale1.rvd = ""
@@ -635,7 +625,7 @@ class Pair:
         self.spacerSize = spacerSize
         self.offTargetPairs = offTargetPairs
         self.diffStrandOffTarget = 0
-        self.sameStrandOffTarget = 0        
+        self.sameStrandOffTarget = 0
 
 
         # Start cluster as -1, but will increment from 1
@@ -656,7 +646,7 @@ class Pair:
                 tale1.rvd += "HD "
             elif base == "G":
                 tale1.rvd += g_RVD
-                
+
         for base in Seq(tale2.guideSeq).reverse_complement():
             if base == "A":
                 tale2.rvd += "NI "
@@ -676,12 +666,12 @@ class Pair:
         for (hit1,hit2) in offTargetPairs:
             # Using boolean, count number of offtarget pairs on different strands
             if hit2.flagSum & hit1.flagSum == 0:
-                self.diffStrandOffTarget += 1                
+                self.diffStrandOffTarget += 1
 
-            # Using boolean, count number of offtarget pairs on same strand   
-            elif hit2.flagSum & hit1.flagSum == 16:               
+            # Using boolean, count number of offtarget pairs on same strand
+            elif hit2.flagSum & hit1.flagSum == 16:
                 self.sameStrandOffTarget += 1
-                
+
             for opt in [hit1.opts, hit2.opts]:
                 if opt == "NM:i:0":
                     indivScore += SCORE['INPAIR_OFFTARGET_0']
@@ -694,21 +684,21 @@ class Pair:
 
         # Compute penalties (scores) for off-target hits. Worst = off-target pair, Not so bad = off-target single tale
         self.score = (self.sameStrandOffTarget * SCORE['OFFTARGET_PAIR_SAME_STRAND']) + (self.diffStrandOffTarget * SCORE['OFFTARGET_PAIR_DIFF_STRAND']) + tale1.score + tale2.score + indivScore
-        resSites = findRestrictionSites(self.spacerSeq, enzymeCo, minResSiteLen)  
+        resSites = findRestrictionSites(self.spacerSeq, enzymeCo, minResSiteLen)
         self.restrictionSites = ";".join(map(lambda x: "%s:%s" % (str(x), ",".join(map(str, resSites[x]))), resSites))
-    
+
 
     def __str__(self):
         # This creates a tab delimited list of output, with the final column as a semicolon-separated list of REs that cut in the spacer        
         sequence = str(self.tale1.guideSeq) + "*" + self.spacerSeq + "*" + str(self.tale2.guideSeq)
 
-        return "%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (
-                sequence, self.chrom, self.start, self.tale1.exonNum, self.tale1.rvd, 
-                self.tale2.rvd, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0], 
-                self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], 
-                self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2], 
-                ">=" + str(self.tale1.offTargetsMM[3]) if self.tale1.isKmaxed else self.tale1.offTargetsMM[3], 
-                ">=" + str(self.tale2.offTargetsMM[3]) if self.tale2.isKmaxed else self.tale2.offTargetsMM[3], 
+        return "%s\t%s:%s\t%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (
+                sequence, self.chrom, self.start, self.tale1.rvd,
+                self.tale2.rvd, self.cluster, len(self.offTargetPairs), self.tale1.offTargetsMM[0],
+                self.tale2.offTargetsMM[0], self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1],
+                self.tale1.offTargetsMM[2], self.tale2.offTargetsMM[2],
+                ">=" + str(self.tale1.offTargetsMM[3]) if self.tale1.isKmaxed else self.tale1.offTargetsMM[3],
+                ">=" + str(self.tale2.offTargetsMM[3]) if self.tale2.isKmaxed else self.tale2.offTargetsMM[3],
                 self.restrictionSites)
 
 
@@ -732,7 +722,7 @@ class Nickase:
     def __init__(self, tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, minResSiteLen):
         self.tale1 = tale1
         self.tale2 = tale2
-        self.chrom = tale1.chrom 
+        self.chrom = tale1.chrom
         self.strand = tale1.strand
         self.ID = ""
         self.restrictionSites = ""
@@ -747,7 +737,7 @@ class Nickase:
         self.spacerSize = spacerSize
         self.offTargetPairs = offTargetPairs
         self.diffStrandOffTarget = 0
-        self.sameStrandOffTarget = 0        
+        self.sameStrandOffTarget = 0
 
 
         # Start cluster as -1, but will increment from 1
@@ -766,8 +756,8 @@ class Nickase:
         for (hit1,hit2) in offTargetPairs:
             # Using boolean, count number of offtarget pairs on different strands
             if hit2.flagSum & hit1.flagSum == 0:
-                self.diffStrandOffTarget += 1                
-                
+                self.diffStrandOffTarget += 1
+
             for opt in [hit1.opts, hit2.opts]:
                 if opt == "NM:i:0":
                     indivScore += SINGLE_OFFTARGET_SCORE[0]
@@ -780,20 +770,20 @@ class Nickase:
 
         # Compute penalties (scores) for off-target hits. Worst = off-target pair, Not so bad = off-target single tale
         self.score = (self.diffStrandOffTarget * SCORE['OFFTARGET_PAIR_DIFF_STRAND']) + tale1.score + tale2.score - indivScore
-        resSites = findRestrictionSites(self.spacerSeq, enzymeCo, minResSiteLen)  
+        resSites = findRestrictionSites(self.spacerSeq, enzymeCo, minResSiteLen)
         self.restrictionSites = ";".join(map(lambda x: "%s:%s" % (str(x), ",".join(map(str, resSites[x]))), resSites))
-    
+
 
     def __str__(self):
         # This creates a tab delimited list of output, with the final column as a semicolon-separated list of REs that cut in the spacer        
         sequence = str(self.tale1.guideSeq) + "*" + self.spacerSeq + "*" + str(self.tale2.guideSeq)
 
-        return "%s\t%s:%s\t%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (
-                sequence, self.chrom, self.start, self.tale1.exonNum, self.cluster, 
-                len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0], 
-                self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2], 
-                self.tale2.offTargetsMM[2], 
-                ">=" + str(self.tale1.offTargetsMM[3]) if self.tale1.isKmaxed else self.tale1.offTargetsMM[3], 
+        return "%s\t%s:%s\t%s\t%s\t%s/%s\t%s/%s\t%s/%s\t%s/%s\t%s" % (
+                sequence, self.chrom, self.start, self.cluster,
+                len(self.offTargetPairs), self.tale1.offTargetsMM[0], self.tale2.offTargetsMM[0],
+                self.tale1.offTargetsMM[1], self.tale2.offTargetsMM[1], self.tale1.offTargetsMM[2],
+                self.tale2.offTargetsMM[2],
+                ">=" + str(self.tale1.offTargetsMM[3]) if self.tale1.isKmaxed else self.tale1.offTargetsMM[3],
                 ">=" + str(self.tale2.offTargetsMM[3]) if self.tale2.isKmaxed else self.tale2.offTargetsMM[3],
                 self.restrictionSites)
 
@@ -831,7 +821,7 @@ def scoregRNA(seq, PAM, tail, lookup):
             score = score + (abs(gc-10) * lookup["gc_low"])
         elif gc > 10:
             score = score + ((gc-10) * lookup["gc_high"])
-    
+
     for i in range(len(seq)):
         key = seq[i] + str(i+1)
         if lookup.has_key(key):
@@ -846,7 +836,7 @@ def scoregRNA(seq, PAM, tail, lookup):
             double_key = PAM[0] + seq[0] + str(0)
             if lookup.has_key(double_key):
                 score += lookup[double_key]
-    
+
     for i in range(len(PAM)):
         key = 'PAM' + PAM[i] + str(i+1)
         if lookup.has_key(key):
@@ -856,7 +846,7 @@ def scoregRNA(seq, PAM, tail, lookup):
             double_key = 'PAM' + PAM[i] + PAM[i+1] + str(i+1)
             if lookup.has_key(double_key):
                 score += lookup[double_key]
-            
+
     for i in range(len(tail)):
         key = str(i+1) + tail[i]
         if lookup.has_key(key):
@@ -866,7 +856,7 @@ def scoregRNA(seq, PAM, tail, lookup):
             double_key = str(i+1) + tail[i] + tail[i+1]
             if lookup.has_key(double_key):
                 score += lookup[double_key]
-    
+
     score = 1/(1 + math.e** -score)
     return score
 
@@ -876,7 +866,7 @@ def scoreChari_2015(svmInputFile, svmOutputFile, PAM, genome):
 
     model = './models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
     dist = './models/Hg19_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
-      
+
     if PAM == 'NGG' and genome == 'mm10':
         model = './models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
         dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
@@ -887,7 +877,7 @@ def scoreChari_2015(svmInputFile, svmOutputFile, PAM, genome):
         model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
         dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
 
-    prog = Popen("./svm_light/svm_classify -v 0 %s %s %s" % (svmInputFile, model, svmOutputFile), shell=True)    
+    prog = Popen("./svm_light/svm_classify -v 0 %s %s %s" % (svmInputFile, model, svmOutputFile), shell=True)
     prog.communicate()
 
     svmAll = open(dist,'r')
@@ -961,215 +951,182 @@ def scoreDoench_2016(seq, PAM, tail):
 
 def gccontent(seq):
         gc = 0
-
         for i in seq:
-                if i =='G' or i == 'g' or i == 'C' or i == 'c':
-                        gc = gc + 1
-        return( float(gc) / float(len(seq)) )
+                if i == 'G' or i == 'g' or i == 'C' or i == 'c':
+                    gc += 1
+        return float(gc)/float(len(seq))
 
 
-def get_mismatch_pos(mismatchString):
+def get_mismatch_pos(mismatch_string):
     mismatches = []
 
-    if mismatchString.isdigit():
+    if mismatch_string.isdigit():
         return []
 
     current = 0
-    for c in range(0, len(mismatchString)-1):    
+    for c in range(0, len(mismatch_string)-1):
 
         # If the character is a digit, check if the next character is a digit (>9) and add number to current
-        if mismatchString[c].isdigit():
-            if mismatchString[c+1].isdigit():
-                current += (int(mismatchString[c])*10)
+        if mismatch_string[c].isdigit():
+            if mismatch_string[c+1].isdigit():
+                current += (int(mismatch_string[c])*10)
             else:
-                current += int(mismatchString[c])
-                    
+                current += int(mismatch_string[c])
+
             # if character is a letter, it's a mismatch => add to results
         else:
             mismatches.append(current)
             current += 1
 
     # Include letters at the end
-    if (mismatchString[-1].isalpha()):
+    if mismatch_string[-1].isalpha():
         mismatches.append(current)
 
     return mismatches
 
 
-def truncateToUTR5(cdsStart, exons, indices):
+def truncateToUTR5(cds_start, exons):
     """ Truncates the gene to only target 5' UTR """
 
-    endExon = 0
-
+    end_exon = 0
     for exon in range(len(exons)):
-        if (cdsStart > exons[exon][1]) and (cdsStart < exons[exon][2]):
-            exons[exon][2] = cdsStart
-            endExon = exon
+        if (cds_start > exons[exon][1]) and (cds_start < exons[exon][2]):
+            exons[exon][2] = cds_start
+            end_exon = exon
             break
-        
-    return (exons[:(endExon+1)], indices[:(endExon+1)])
+
+    return exons[:end_exon + 1]
 
 
-def truncateToPROMOTER(strand, exons, indices, bp):
+def truncateToPROMOTER(strand, exons, bp):
     """ Truncates the gene to only target promoter +-bp TSS """
-    
-    if (strand == "+"):
-        firstExon = exons[0]
-        firstExon[2] = firstExon[1] + bp
-        firstExon[1] = firstExon[1] - bp
-        return ([firstExon], [indices[0]])
-    else:
-        firstExon = exons[-1]
-        firstExon[1] = firstExon[2] - bp
-        firstExon[2] = firstExon[2] + bp
-        return ([firstExon], [indices[-1]])
-    
-    return (exons, indices)
-    
 
-def truncateToUTR3(cdsEnd, exons, indices):
+    if strand == "+":
+        first_exon = exons[0]
+        first_exon[2] = first_exon[1] + bp
+        first_exon[1] = first_exon[1] - bp
+        return [first_exon]
+    else:
+        first_exon = exons[-1]
+        first_exon[1] = first_exon[2] - bp
+        first_exon[2] = first_exon[2] + bp
+        return [first_exon]
+
+    return exons
+
+
+def truncateToUTR3(cds_end, exons):
     """ Truncates the gene to only target 3' UTR """
 
-    startExon = 0
-
+    start_exon = 0
     for exon in range(len(exons)):
-        if (cdsEnd > exons[exon][1]) and (cdsEnd < exons[exon][2]):
-            exons[exon][1] = cdsEnd
-            startExon = exon
-        
-    return (exons[startExon:], indices[startExon:])
+        if (cds_end > exons[exon][1]) and (cds_end < exons[exon][2]):
+            exons[exon][1] = cds_end
+            start_exon = exon
+
+    return exons[start_exon:]
 
 
-def truncateToSplice(exons, indices):
+def truncateToSplice(exons):
     """ Truncates the gene to only target splice sites """
 
-    spliceSites = []
+    splice_sites = []
     for ind in range(0, len(exons)):
-        spliceSites.append([exons[ind][0], exons[ind][1]-1, exons[ind][1]+1])
-        spliceSites.append([exons[ind][0], exons[ind][2]-1, exons[ind][2]+1])
-        indices.extend([indices[ind],indices[ind]])
-
+        splice_sites.append([exons[ind][0], exons[ind][1]-1, exons[ind][1]+1])
+        splice_sites.append([exons[ind][0], exons[ind][2]-1, exons[ind][2]+1])
     # Remove first and last (i.e. transcription start and termination site)
-    return (spliceSites[1:len(spliceSites)-1], indices[1:len(spliceSites)-1])
+    return splice_sites[1:len(splice_sites)-1]
 
 
-def truncateToCoding(cdsStart, cdsEnd, exons, indices):
+def truncateToCoding(cds_start, cds_end, exons):
     """ Truncates the gene to only consider the coding region """
 
-    startExon, endExon = 0, len(exons)-1
-
+    start_exon, end_exon = 0, len(exons)-1
     # Shortens the coding region to the exons and coordinates between the cds start and cds end
     for exon in range(len(exons)):
-        if (cdsStart >= exons[exon][1]) and (cdsStart <= exons[exon][2]):
-            exons[exon][1] = cdsStart
-            startExon = exon
-        
-        if (cdsEnd >= exons[exon][1]) and (cdsEnd <= exons[exon][2]):
+        if (cds_start >= exons[exon][1]) and (cds_start <= exons[exon][2]):
+            exons[exon][1] = cds_start
+            start_exon = exon
+
+        if (cds_end >= exons[exon][1]) and (cds_end <= exons[exon][2]):
             # replace the end with the cds end
-            exons[exon][2] = cdsEnd
-            endExon = exon
-    
-    if startExon > endExon:
-        startExon, endExon = endExon, startExon
+            exons[exon][2] = cds_end
+            end_exon = exon
+
+    if start_exon > end_exon:
+        start_exon, end_exon = end_exon, start_exon
 
     # Shorten list to include exons from cds start to end
-    return (exons[startExon:(endExon+1)], indices[startExon:(endExon+1)])
-
-    
-def _geneLineToCoord(line, guideSize):
-    startSplit = line[1].split(",")
-    endSplit = line[2].split(",")
-    
-    # Remove last (empty) item in list (due to extra comma)
-    del startSplit[-1]
-    del endSplit[-1]            
-    
-    startBase = map(int, startSplit)
-    endBase = map(int, endSplit)            
-
-    intronSize = [int(startBase[x+1]) - int(endBase[x]) for x in range(len(startBase)-1)]
-    intronSize.append(0)
-    
-    return map(lambda x : [line[0], x[0], x[1], x[2]], zip(startBase, endBase ,intronSize))
+    return exons[start_exon:(end_exon+1)]
 
 
-def geneToCoord_db(gene, organism, db, guideSize, index):
+def geneToCoord_db(gene, organism, db):
     """ Gets genomic coordinates for a gene from a database """
 
     # Try refseq first
     lines = db.execute("SELECT chrom, exonStarts, exonEnds, r.name, cdsStart, cdsEnd, strand, txStart, txEnd FROM organism o, refGene r WHERE o.assembly='%s' AND o.organism_id=r.organism_id AND (r.name='%s' OR r.name2='%s')" % (organism, gene, gene))
 
     # Then Ensembl
-    if lines == 0: 
+    if lines == 0:
         lines = db.execute("SELECT chrom, exonStarts, exonEnds, r.name, cdsStart, cdsEnd, strand, txStart, txEnd FROM organism o, ensGene r LEFT OUTER JOIN ensemblToGeneName g ON r.name=g.name WHERE o.assembly='%s' AND o.organism_id=r.organism_id AND  (r.name='%s' OR r.name2='%s' OR g.value='%s')" % (organism, gene, gene, gene))
 
     # Then the general genePred table
-    if lines == 0: 
+    if lines == 0:
         lines = db.execute("SELECT chrom, exonStarts, exonEnds, r.name, cdsStart, cdsEnd, strand, txStart, txEnd FROM organism o, gpGene r WHERE o.assembly='%s' AND o.organism_id=r.organism_id AND (r.name='%s' OR r.name2='%s')" % (organism, gene, gene))
 
     # Then wormbase. FIX: NO HARDCODED ASSEMBLY!!!
-    if organism == "ce6" and lines == 0: 
+    if organism == "ce6" and lines == 0:
         lines = db.execute("SELECT chrom, exonStarts, exonEnds, name, cdsStart, cdsEnd, strand, txStart, txEnd FROM sangerGene WHERE (name='%s' OR proteinID='%s')" % (gene, gene))
 
     # Then flybase. FIX: NO HARDCODED ASSEMBLY!!!
-    if organism == "dm3" and lines == 0: 
+    if organism == "dm3" and lines == 0:
         lines = db.execute("SELECT chrom, exonStarts, exonEnds, name, cdsStart, cdsEnd, strand, txStart, txEnd FROM flyBaseGene WHERE name='%s'" % (gene))
 
     if lines == 0:
         sys.stderr.write("The gene name %s was not found in the gene sets for assembly %s. Consider trying an alternative ID (see the instruction page for supported gene identifiers) or using genomic coordinates. If you believe this type of ID should be supported for your organism contact us and we will do our best to support it. \n" % (gene, organism))
         sys.exit(EXIT['GENE_ERROR'])
-    
-    if lines > 1:
-        if index == -1:
-            sys.stderr.write("There are multiple transcripts for the gene %s. \n" % gene)
-            sys.stderr.write("Please pick a more specific target:\n")
-            for line in db:
-                sys.stderr.write("%s,%s:%s-%s,%s\n" % (line[3], line[0], line[7], line[8], line[6]))
-            sys.exit(EXIT['ISOFORM_ERROR'])
-    else:
-        index = 1
 
-    for i in range(index):
-        line = db.fetchone()
+    txInfo = []
+    for i in range(lines):
+        txInfo.append(db.fetchone())
 
-    return (_geneLineToCoord(line, guideSize), int(line[4]), int(line[5]), line[6])
+    return txInfo
 
 
-def geneToCoord_file(geneIN, tableFile, guideSize):    
+def geneToCoord_file(gene_in, table_file):
     """ Extracts coordinates of genomic regions to parse for suitable guide binding sites """
 
-    tableR = open(tableFile, 'rb')
-    tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
+    table_r = open(table_file, 'rb')
+    tablereader = csv.DictReader(table_r, delimiter='\t', quoting=csv.QUOTE_NONE)
 
-    line = []
+    tx_info = []
     # Look in genome table for gene of question
     for row in tablereader:
-        if (row['name'] == geneIN or row['name2'] == geneIN):
-            line = [row['chrom'], row['exonStarts'], row['exonEnds'], row['cdsStart'], row['cdsEnd'], row['strand']]
-            break
+        if row['name'] == gene_in or row['name2'] == gene_in:
+            tx_info.append([row['chrom'], row['exonStarts'], row['exonEnds'], row['name'],
+                           row['cdsStart'], row['cdsEnd'], row['strand'],
+                           row['txStart'], row['txEnd']])
+    table_r.close()
 
-    tableR.close()
-
-    if not line:
-        # Error if gene doesn't exist.
-        sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (geneIN, tableFile))
+    if len(tx_info) == 0:
+        sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (gene_in, table_file))
         sys.exit(EXIT['GENE_ERROR'])
-    
-    return (_geneLineToCoord(line[:3], guideSize), line[3], line[4], line[5])
+
+    return tx_info
 
 
 def geneIsoforms(isoform, tableFile):
-    
+
     tableR = open(tableFile, 'rb')
     tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
     gene_isoforms = set()
     gene = None
-    
+
     for row in tablereader:
         if row['name'] == isoform:
             gene = row['name2']
             break
-    
+
     tableR.close()
     tableR = open(tableFile, 'rb')
     tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
@@ -1177,10 +1134,10 @@ def geneIsoforms(isoform, tableFile):
         if row['name2'] == gene:
             gene_isoforms.add(row['name'])
     tableR.close()
-    
+
     return gene, isoform, gene_isoforms
-    
-    
+
+
 def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, indexDir, genome, strand):
     """ Extracts the sequence corresponding to genomic coordinates from a FASTA file """
 
@@ -1195,26 +1152,22 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         # Extracts chromosome number and region start and end
         chrom = region[0:region.rfind(':')]
         start = int(region[region.rfind(':')+1:region.rfind('-')])
-        finish = int(region[region.rfind('-')+1:])      
+        finish = int(region[region.rfind('-')+1:])
         start = max(start, 0)
 
         # Run twoBitToFa program to get actual dna sequence corresponding to input genomic coordinates
         # Popen runs twoBitToFa program. PIPE pipes stdout.
-        prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (CONFIG["PATH"]["TWOBITTOFA"], chrom, start, finish, indexDir, genome, outputDir), stdout = PIPE, shell=True)
+        prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (
+            CONFIG["PATH"]["TWOBITTOFA"], chrom, start, finish, indexDir, genome, outputDir), stdout=PIPE, shell=True)
 
         # Communicate converts stdout to a string
-        output = prog.communicate()  
-        if (prog.returncode != 0):
-            sys.stderr.write("Running twoBitToFa failed\n");
-            sys.exit(EXIT['TWOBITTOFA_ERROR']);
+        output = prog.communicate()
+        if prog.returncode != 0:
+            sys.stderr.write("Running twoBitToFa failed\n")
+            sys.exit(EXIT['TWOBITTOFA_ERROR'])
 
-        # Ignore other outputs you get from running Popen
         output = output[0]
-
-        # Split string by newlines into a list 
-        exons = output.split("\n")        
-
-        # Join together the list without the first line to give just continuous dna sequence of each exon
+        exons = output.split("\n")
         dna = ''.join(exons[1:]).upper()
         if ISOFORMS and strand == "-":
             dna = str(Seq(dna).reverse_complement())
@@ -1227,63 +1180,68 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
 
         # Loop over exon sequence, write every g-mer into file in which g-mer ends in PAM in fasta format 
         for num in range(0,len(dna)-(targetSize-1)):
-            
+
             if (num - DOWNSTREAM_NUC) > 0:
                 start5prim = num - DOWNSTREAM_NUC
             else:
                 start5prim = 0
-                
+
             if (num + targetSize + DOWNSTREAM_NUC) > len(dna):
                 end3prim = len(dna)
             else:
                 end3prim = num + targetSize + DOWNSTREAM_NUC
 
-            downstream_5prim = dna[(start5prim):num] 
+            downstream_5prim = dna[(start5prim):num]
             downstream_3prim = dna[(num + targetSize):end3prim]
-            if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)], num, fastaFile, downstream_5prim, downstream_3prim):
+            if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)], num, fastaFile,
+                                downstream_5prim, downstream_3prim):
                 sequences[name] = dna
 
     fastaFile.close()
-    
+
     return sequences, fastaSeq
 
 
-def runBowtie(PAMlength, uniqueMethod_Cong, fastaFile, outputDir, maxOffTargets, indexDir, genome, maxMismatches):
-    """ Runs bowtie """
+def runBowtie(PAMlength, unique_method_cong, fasta_file, output_dir,
+              max_off_targets, index_dir, genome, max_mismatches):
 
-    bowtieResultsFile = '%s/output.sam' % outputDir
-
-    if uniqueMethod_Cong and not ISOFORMS: #When ISOFORMS dna string is not reverse complemented and Cong can't be used
-        # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the -n option. Outside of that seed, up to 2 mismatches are searched. 
+    bwt_results_file = '%s/output.sam' % output_dir
+    if unique_method_cong and not ISOFORMS:
+        # When ISOFORMS dna string is not reverse complemented and Cong can't be used
+        # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the
+        # -n option. Outside of that seed, up to 2 mismatches are searched.
         # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 3 mismatches
-        command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (CONFIG["PATH"]["BOWTIE"], (PAMlength + 11), maxMismatches, maxOffTargets, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
+        command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (
+            CONFIG["PATH"]["BOWTIE"], (PAMlength + 11), max_mismatches, max_off_targets, max_off_targets, index_dir,
+            genome, fasta_file, bwt_results_file)
     else:
-        command = "%s -v %d --sam-nohead -k %d %s/%s -f %s -S %s " % (CONFIG["PATH"]["BOWTIE"], maxMismatches, maxOffTargets, indexDir, genome, fastaFile, bowtieResultsFile)
+        command = "%s -v %d --sam-nohead -k %d %s/%s -f %s -S %s " % (
+            CONFIG["PATH"]["BOWTIE"], max_mismatches, max_off_targets, index_dir, genome, fasta_file, bwt_results_file)
 
-    if ISOFORMS: # When ISFORMS we don't check reverse complement 
-        command = command + "--norc "
-    
-    command = command + "2> %s/bowtie.err" % (outputDir)
-    
+    if ISOFORMS: # When ISFORMS we don't check reverse complement
+        command += "--norc "
+
+    command += "2> %s/bowtie.err" % output_dir
+
     prog = Popen(command, shell=True)
     prog.wait()
 
-    if (prog.returncode != 0):
-        sys.stderr.write("Running bowtie failed\n");
-        sys.exit(EXIT['BOWTIE_ERROR']);
+    if prog.returncode != 0:
+        sys.stderr.write("Running bowtie failed\n")
+        sys.exit(EXIT['BOWTIE_ERROR'])
 
-    return bowtieResultsFile
+    return bwt_results_file
 
 
 
-def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, targets, scoreGC, scoreSelfComp, 
-                backbone, replace5prime, maxOffTargets, allowMM, countMM, PAM, mode, scoringMethod=None, 
+def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, scoreGC, scoreSelfComp,
+                backbone, replace5prime, maxOffTargets, countMM, PAM, mode, scoringMethod=None,
                 genome=None, gene=None, isoform=None, gene_isoforms=None):
     """ Parses bowtie hits and build list of guides"""
-    
+
     currGuide = None
     guideList = []
-    
+
     sam = pandas.read_csv(bowtieResultsFile, sep = '\t', names = list(range(14)),
                           header = None, index_col = False)
     samName = sam.iloc[:, 0].value_counts()
@@ -1293,12 +1251,12 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
         sam[0] = sam[0].str[:-(len(PAM) + 1)]
         samName = sam.groupby(0).apply(lambda x, m = maxOffTargets: any(x.iloc[:, 14].value_counts() >= m))
         sam = sam.drop([14], axis = 1)
-        
+
         sam = sam.groupby([0, 1, 2, 3]).apply(# remove duplicates
             lambda x: x.sort_values(by = 11).iloc[0])
         sam = sam.sort_values(by = [0, 11, 1, 2, 3])
         sam = sam.reset_index(drop = True)
-    
+
     for idx, row in sam.iterrows():
         line = list(row)
         if line[12] != line[12]:
@@ -1314,25 +1272,14 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, displayIndices, ta
         if currGuide == None or name != currGuide.name:
             currGuide = guideClass(line[0], line[1], len(line[9]),
                                    elements[6] if len(elements) == 7 else line[9], scoreGC, scoreSelfComp,
-                                   backbone, PAM, replace5prime, scoringMethod, 
+                                   backbone, PAM, replace5prime, scoringMethod,
                                    genome, gene, isoform, gene_isoforms,
                                    isKmaxed = isKmaxed)
             guideList.append(currGuide)
 
         # Adds hit to off-target list of current guide.
         currGuide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, countMM)
-        
-   
-    for guideNum in range(0, len(guideList)):
-        for target in range(0, len(targets)):        
-            # coordinate for beginning of exon
-            targetExon = int(targets[target][ targets[target].rfind(":") + 1:targets[target].rfind("-") ])
-            
-            # find guides that live in particular exon
-            if guideList[guideNum].exonStart == targetExon:                
-                # assign them the exon number
-                guideList[guideNum].exonNum = displayIndices[target]
-        
+
     return guideList
 
 
@@ -1341,13 +1288,12 @@ def parse_primer3_output(target, region, primer3output, primerFastaFile):
     attPattern = re.compile('PRIMER_(\w+)_(\d+)_(\w+)')
     primers = {}
     primerPos = {}
-    position, length = 0,0
-    
+
     for line in primer3output.split("\n"):
         if line[0] == "=":
-            break 
+            break
 
-        label, value = line.split("=")        
+        label, value = line.split("=")
         m = attPattern.match(label)
         if m:
             primers[(m.group(2), m.group(1), m.group(3))] = value
@@ -1355,17 +1301,18 @@ def parse_primer3_output(target, region, primer3output, primerFastaFile):
             m = posPattern.match(label)
 
             if m:
-                position, length = value.split(",")            
-                
+                position, length = value.split(",")
+
                 s, e = int(position), int(position)+int(length)
                 if m.group(1) == "RIGHT":
                     s, e = int(position)-int(length)+1, int(position)+1
                 primerPos[label] = [s,e]
 
-                primerFastaFile.write(">%s_%s_%s:%s_%s-%s\n%s\n" % (target.ID, m.group(2), m.group(1), region, s, e, primers[(m.group(2), m.group(1), "SEQUENCE")]))
+                primerFastaFile.write(">%s_%s_%s:%s_%s-%s\n%s\n" % (
+                    target.ID, m.group(2), m.group(1), region, s, e, primers[(m.group(2), m.group(1), "SEQUENCE")]))
 
     return primers, primerPos
-    
+
 
 def get_primer_options(options):
     # Parse primer3 options. Update config if known option, otherwise append to primer3 input file
@@ -1386,7 +1333,7 @@ def get_primer_query_sequence_fasta(target, outputDir, flank, fastaSequence):
     e = target.end+flank
     seqLenBeforeTarget = flank
 
-    if s < 0:        
+    if s < 0:
         seqLenBeforeTarget -= abs(s)
         s = 0
 
@@ -1400,38 +1347,41 @@ def get_primer_query_sequence_2bit(target, outputDir, flank, genome, twoBitToFaI
     s = target.start-flank
     seqLenBeforeTarget = flank
 
-    if s < 0:        
+    if s < 0:
         seqLenBeforeTarget -= abs(s)
         s = 0
 
-    prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err" % (CONFIG["PATH"]["TWOBITTOFA"], target.chrom, s, target.end+flank, twoBitToFaIndexDir, genome, outputDir), stdout = PIPE, shell=True)
-    output = prog.communicate()  
-    
-    if (prog.returncode != 0):
-        sys.stderr.write("Running twoBitToFa failed\n");
-        sys.exit(EXIT['TWOBITTOFA_ERROR']);
+    prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2>> %s/twoBitToFa.err" % (
+        CONFIG["PATH"]["TWOBITTOFA"], target.chrom, s, target.end+flank, twoBitToFaIndexDir, genome, outputDir),
+                 stdout=PIPE, shell=True)
+    output = prog.communicate()
+
+    if prog.returncode != 0:
+        sys.stderr.write("Running twoBitToFa failed\n")
+        sys.exit(EXIT['TWOBITTOFA_ERROR'])
 
     output = output[0].split("\n")
     del(output[0])
-
     seq = "".join(output)
-
     return seq, seqLenBeforeTarget
 
 
 def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, maxOffTargets):
-    command = "%s -v 0 --best --sam-nohead -k 10 %s/%s -f %s -S %s/primer_results.sam 2> %s/bowtie_primers.err" % (CONFIG["PATH"]["BOWTIE"], bowtieIndexDir, genome, primerFastaFileName, outputDir, outputDir)
-    prog = Popen(command, shell=True)
+    command = "%s -v 0 --best --sam-nohead -k 10 %s/%s -f %s -S %s/primer_results.sam 2> %s/bowtie_primers.err" % (
+        CONFIG["PATH"]["BOWTIE"], bowtieIndexDir, genome, primerFastaFileName, outputDir, outputDir)
+    prog = Popen(command, shell = True)
     prog.wait()
 
-    if (prog.returncode != 0):
-        sys.stderr.write("Running bowtie on primers failed\n");
-        sys.exit(EXIT['BOWTIE_PRIMER_ERROR']);
+    if prog.returncode != 0:
+        sys.stderr.write("Running bowtie on primers failed\n")
+        sys.exit(EXIT['BOWTIE_PRIMER_ERROR'])
 
-    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, False, [], False, False, None, None, maxOffTargets, None, None, None, False, None, None)
+    return parseBowtie(Guide, "%s/primer_results.sam" % outputDir, False, False, False, None, None,
+                       maxOffTargets, None, None, False, None, None)
 
 
-def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
+def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir,
+                       fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
     primers = {}
     primerOpt = get_primer_options(primer3options)
 
@@ -1453,14 +1403,15 @@ def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bo
         dump_genbank_file(seq, target, restSites, primerPos, outputDir, geneID, target.start-seqLenBeforeTarget, "+")
 
     primerFastaFile.close()
-       
+
     primerResults = runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, maxOffTargets)
     pairPrimers(primers, primerResults, outputDir)
 
 
-def make_primers_genome(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, twoBitToFaIndexDir, primer3options, guidePadding, enzymeCo, minResSiteLen, strand, geneID, maxOffTargets):
+def make_primers_genome(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, twoBitToFaIndexDir,
+                        primer3options, guidePadding, enzymeCo, minResSiteLen, strand, geneID, maxOffTargets):
     primers = {}
-    
+
     primerOpt = get_primer_options(primer3options)
 
     # RUN PRIMER3 ON TARGET SITES AND CREATE FASTA FILE OF PRIMERS FOR BOWTIE
@@ -1468,7 +1419,8 @@ def make_primers_genome(targets, outputDir, flanks, genome, limitPrintResults, b
     primerFastaFile = open(primerFastaFileName, 'w')
     for i in range(min(limitPrintResults-1, len(targets))):
         target = targets[i]
-        seq, seqLenBeforeTarget = get_primer_query_sequence_2bit(target, outputDir, flanks, genome, twoBitToFaIndexDir, strand)
+        seq, seqLenBeforeTarget = get_primer_query_sequence_2bit(
+            target, outputDir, flanks, genome, twoBitToFaIndexDir, strand)
         primer3_output = make_primer_for_target(target, outputDir, seq, seqLenBeforeTarget, primerOpt, guidePadding)
         region = "%s:%s-%s" % (target.chrom, max(0, target.start-flanks), target.end+flanks)
         target_primers, primerPos = parse_primer3_output(target, region, primer3_output, primerFastaFile)
@@ -1540,7 +1492,7 @@ def dump_genbank_file(seq, target, restSites, primers, outputDir, geneID, lociSt
     annotation = {"organism" : "Danio rerio", "Target location" : "chrT:1-20"}
 
     # Genbank file
-    genbankFile = open('%s/%s_%s.gb' % (outputDir, geneID, target.ID), 'w')    
+    genbankFile = open('%s/%s_%s.gb' % (outputDir, geneID, target.ID), 'w')
     record = SeqRecord(Seq(seq, IUPACAmbiguousDNA()), description=desc, name="CHOPCHOP", id=name)
     record.annotation = annotation
 
@@ -1548,11 +1500,12 @@ def dump_genbank_file(seq, target, restSites, primers, outputDir, geneID, lociSt
         ts = 1
     else:
         ts = -1
-        
-    record.features.append(SeqFeature(FeatureLocation(target.start-lociStart-1, target.end-lociStart-1, strand=ts), type = "Target"))
+
+    record.features.append(SeqFeature(FeatureLocation(target.start-lociStart-1, target.end-lociStart-1, strand=ts),
+                                      type="Target"))
 
     for primer in primers:
-        record.features.append(SeqFeature(FeatureLocation(primers[primer][0], primers[primer][1]), type = primer))
+        record.features.append(SeqFeature(FeatureLocation(primers[primer][0], primers[primer][1]), type=primer))
 
     if strand == "-":
         record = record.reverse_complement()
@@ -1595,16 +1548,18 @@ def pairPrimers(primerAttributes, primerList, outputDir):
             rsq = Seq(att[(pairID, "RIGHT", "SEQUENCE")])
 
             offTargetPairs = has_Off_targets(pair[0], pair[1], PRIMER_OFF_TARGET_MIN, PRIMER_OFF_TARGET_MIN)
-            output.append([ pair[0].chrom, pair[0].start, pair[0].end, pair[1].start, pair[1].end, i, pair[0].strand, "%s" % lsq, "%s" % rsq, len(pair[0].offTargets), len(pair[1].offTargets), len(offTargetPairs), ltm, rtm, size ])
+            output.append([ pair[0].chrom, pair[0].start, pair[0].end, pair[1].start, pair[1].end, i, pair[0].strand,
+                            "%s" % lsq, "%s" % rsq, len(pair[0].offTargets), len(pair[1].offTargets),
+                            len(offTargetPairs), ltm, rtm, size ])
 
             i += 1
 
         json.dump(output, outputFile)
         outputFile.close()
 
- 
+
 def make_primer_for_target(guide, outputDir, sequence, seqLenBeforeTarget, primer3options, padding):
-    
+
     template = """PRIMER_SEQUENCE_ID={PRIMER_SEQUENCE_ID:s}
 SEQUENCE_TEMPLATE={SEQUENCE_TEMPLATE:s}
 SEQUENCE_TARGET={SEQUENCE_TARGET_START:s},{SEQUENCE_TARGET_LEN:s}
@@ -1625,7 +1580,7 @@ PRIMER_EXPLAIN_FLAG=1
     primConfig['SEQUENCE_TEMPLATE'] = sequence
     primConfig['SEQUENCE_TARGET_START'] = str(seqLenBeforeTarget-padding)
     primConfig['SEQUENCE_TARGET_LEN'] = str(guide.targetSize+(2*padding))
-    
+
 
     primer3InputFile = '%s/%s.primer3Input' % (outputDir, guide.ID)
     f = open(primer3InputFile, 'w')
@@ -1641,21 +1596,21 @@ PRIMER_EXPLAIN_FLAG=1
 
     if (prog.returncode != 0):
         sys.stderr.write("Running Primer3 failed\n");
-        sys.exit(EXIT['PRIMER3_ERROR']);    
+        sys.exit(EXIT['PRIMER3_ERROR']);
 
     return output[0]
 
 
 def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, mode, totalClusters, limitPrintResults):
     """ Writes each guide and its offtargets into a file """
-    
+
     # Initiate list of lists for each cluster
     clusters = [[] for i in range(totalClusters)]
-    
+
     fileHandler = dict()
 
     # Limit the number of open files (and results) 
-    sortedOutput = sortedOutput[0:min(len(sortedOutput),limitPrintResults-1)] 
+    sortedOutput = sortedOutput[0:min(len(sortedOutput),limitPrintResults-1)]
 
     for i in range(len(sortedOutput)):
         current = sortedOutput[i]
@@ -1663,21 +1618,21 @@ def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, m
 
         # Create new file if not already opened
         if not current.ID in fileHandler:
-            resultsFile = '%s/%s.offtargets' % (outputDir, current.ID)            
+            resultsFile = '%s/%s.offtargets' % (outputDir, current.ID)
             fileHandler[current.ID] = open(resultsFile, 'w')
         f = fileHandler[current.ID]
 
         # Add the current TALE pair to the appropriate list in the list of lists, depending on its cluster number            
         if mode == TALENS or mode == NICKASE:
             clusterID = current.cluster
-            clusters[clusterID-1].append(current)             
-            
+            clusters[clusterID-1].append(current)
+
         offTargets = current.asOffTargetString("", maxOffTargets)
         if not offTargets:
             offTargets = "There are no predicted off-targets."
 
         f.write(str(current.strandedGuideSeq)+"\n"+offTargets+"\n")
-                
+
     for clust in clusters:
         if len(clust) == 0:
             continue
@@ -1685,14 +1640,18 @@ def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, m
 
         for member in clust[1:]:
             # Write the other cluster members to file
-            fileHandler[bestInCluster.ID].write("%s*%s*%s,%s:%s,%s,%s,%s/%s,%s/%s,%s/%s,%s/%s;" % (member.tale1.guideSeq, member.spacerSeq, member.tale2.guideSeq, member.chrom, member.start, member.tale1.exonNum, len(member.offTargetPairs), member.tale1.offTargetsMM[0], member.tale2.offTargetsMM[0], member.tale1.offTargetsMM[1], member.tale2.offTargetsMM[1], member.tale1.offTargetsMM[2], member.tale2.offTargetsMM[2], member.tale1.offTargetsMM[3], member.tale2.offTargetsMM[3]))
+            fileHandler[bestInCluster.ID].write("%s*%s*%s,%s:%s,%s,%s/%s,%s/%s,%s/%s,%s/%s;" % (
+                member.tale1.guideSeq, member.spacerSeq, member.tale2.guideSeq, member.chrom, member.start,
+                len(member.offTargetPairs), member.tale1.offTargetsMM[0], member.tale2.offTargetsMM[0],
+                member.tale1.offTargetsMM[1], member.tale2.offTargetsMM[1], member.tale1.offTargetsMM[2],
+                member.tale2.offTargetsMM[2], member.tale1.offTargetsMM[3], member.tale2.offTargetsMM[3]))
 
         fileHandler[bestInCluster.ID].write("\n"+current.restrictionSites+"\n")
 
     for fh in fileHandler.values():
         fh.close()
-        
-    return clusters            
+
+    return clusters
 
 
 def findRestrictionSites(sequence, enzymeCompany, minSize=1):
@@ -1700,7 +1659,7 @@ def findRestrictionSites(sequence, enzymeCompany, minSize=1):
     mySeq = Seq(sequence, IUPACAmbiguousDNA())
 
     # Restricts enzyme possibilities to NEB enzymes. Can ultimately change to any supplier.
-    rb = RestrictionBatch(first=[], suppliers=[enzymeCompany])        
+    rb = RestrictionBatch(first=[], suppliers=[enzymeCompany])
 
     # Filter binding sites shorter than given length
     rb = filter(lambda x: len(x) > minSize, rb)
@@ -1777,11 +1736,11 @@ def permPAM(PAM):
         else:
             comb = new_comb
             new_comb = []
-            
+
         for j in codes[PAM[i + 1]]:
             for c in comb:
                 new_comb.append(c + j)
-                
+
     return new_comb
 
 
@@ -1804,11 +1763,11 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
     else:
         fwd = dna[len(PAM):]  # Do not include PAM motif in folding calculations
 
-    
+
     add = True
     for pos in range(len(PAM)):
         if comaprePAM(PAM[pos], dna[pos]):
-            continue 
+            continue
         else:
             add = False
             break
@@ -1826,26 +1785,27 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
         folding = selfComp(fwd, backbone)
         if folding > filterSelfCompMax:
             add = False
-                
+
     if add:
         if ISOFORMS:
-            fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+            fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (
+                name, num, num+guideSize, downstream5prim, downstream3prim, dna))
             return True
         else:
             dna = dna.reverse_complement()
             pam_comb = permPAM(revCompPAM)
             for p in pam_comb:
                 fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
-                                name, num, num+guideSize, downstream5prim, downstream3prim, 
+                                name, num, num+guideSize, downstream5prim, downstream3prim,
                                 dna, p, dna[:gLen] + p))
             return True
-        
-    
+
+
     add = True
-    
+
     for pos in range(len(PAM)):
         if comaprePAM(revCompPAM[pos], dna[gLen + pos]):
-            continue 
+            continue
         else:
             add = False
             break
@@ -1863,15 +1823,15 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
         folding = selfComp(fwd, backbone)
         if folding > filterSelfCompMax:
             add = False
-    
+
     if add and not ISOFORMS:
         pam_comb = permPAM(revCompPAM)
         for p in pam_comb:
             #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
             fastaFile.write('>%s_%d-%d:%s:%s:-:%s:%s\n%s\n' % (
-                            name, num, num+guideSize, 
-                            Seq(downstream3prim).reverse_complement(), 
-                            Seq(downstream5prim).reverse_complement(), 
+                            name, num, num+guideSize,
+                            Seq(downstream3prim).reverse_complement(),
+                            Seq(downstream5prim).reverse_complement(),
                             dna, p, dna[:gLen] + p))
         return True
 
@@ -1908,7 +1868,7 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
         add = True
         for pos in range(len(PAM)):
             if comaprePAM(PAM[pos], dna[gLen + pos]):
-                continue 
+                continue
             else:
                 add = False
                 break
@@ -1926,23 +1886,24 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
             folding = selfComp(fwd, backbone)
             if folding > filterSelfCompMax:
                 add = False
-            
+
         # in order to control the number of mismatches to search in the last 8 or 3 bps, 
         # need to reverse complement so the seed region can be at the start
         # rather than end of the sequence
         # not in isoforms case as we don't search reverse complement
         if add:
             if ISOFORMS:
-                fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (name, num, num+guideSize, downstream5prim, downstream3prim, dna))
+                fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (
+                    name, num, num+guideSize, downstream5prim, downstream3prim, dna))
                 return True
             else:
                 # all combinations of possible PAMs
                 dna = dna.reverse_complement()
                 pam_comb = permPAM(revCompPAM)
-                
+
                 for p in pam_comb:
                     fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
-                                    name, num, num+guideSize, downstream5prim, downstream3prim, 
+                                    name, num, num+guideSize, downstream5prim, downstream3prim,
                                     dna, p, p + dna[len(revCompPAM):]))
                 return True
 
@@ -1951,7 +1912,7 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
 
         for pos in range(len(PAM)):
             if comaprePAM(revCompPAM[pos], dna[pos]):
-                continue 
+                continue
             else:
                 add = False
                 break
@@ -1975,9 +1936,9 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
             for p in pam_comb:
                 #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
                 fastaFile.write('>%s_%d-%d:%s:%s:-:%s:%s\n%s\n' % (
-                                name, num, num+guideSize, 
-                                Seq(downstream3prim).reverse_complement(), 
-                                Seq(downstream5prim).reverse_complement(), 
+                                name, num, num+guideSize,
+                                Seq(downstream3prim).reverse_complement(),
+                                Seq(downstream5prim).reverse_complement(),
                                 dna, p, p + dna[len(revCompPAM):]))
             return True
 
@@ -1995,7 +1956,8 @@ def sort_CRISPR_guides(guides):
 ##
 
 
-def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, enzymeCo, maxOffTargets, g_RVD, minResSiteLen):
+def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance,
+               enzymeCo, maxOffTargets, g_RVD, minResSiteLen):
     pairs = []
 
     for i in range(len(taleList)-1):
@@ -2007,11 +1969,10 @@ def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, 
 
             # This will finish the search for more pairs if we are out of range
             if tale1.start + taleMaxDistance < tale2.start:
-                break 
+                break
 
-            # If pairs are within the correct range of one another and one tale begins with T, while the other ends with A...
-            # elif tale1.start + taleMinDistance < tale2.start and tale1.guideSeq[0] == "T" and tale2.guideSeq[guideSize-1] == "A" and tale1.strand == "+" and tale2.strand == "-":
-            elif tale1.start + taleMinDistance < tale2.start and tale1.guideSeq[0] == "T" and tale2.guideSeq[guideSize-1] == "A":
+            elif tale1.start + taleMinDistance < tale2.start and tale1.guideSeq[0] == "T" and \
+                            tale2.guideSeq[guideSize-1] == "A":
 
                 # EDV: Are all these find calls faster than a regular expression?
                 pos = tale1.name.find('_')
@@ -2031,7 +1992,7 @@ def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, 
                 tale1End = int(tale1coords[tale1coords.find('-')+1:])
 
                 # The coordinates of the tale within the exon e.g. 160-175
-                tale2coords = tale2.name[tale2.name.find('_')+1:]                            
+                tale2coords = tale2.name[tale2.name.find('_')+1:]
 
                 # Just the first coordinate, corresponding to the beginning of the second tale e.g. 160
                 tale2Start = int(tale2coords[:tale2coords.find('-')])
@@ -2039,7 +2000,7 @@ def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, 
                 # sequence of spacer between end of tale1 and beginning of tale2
                 spacerSeq = exonSeq[tale1End:tale2Start]
 
-                spacerSize = len(spacerSeq)                         
+                spacerSize = len(spacerSeq)
 
                 # if spacerSize < 3:
                 #      sys.stderr.write("(%s)  (%s)\n" % (tale1.name, tale2.name))
@@ -2052,12 +2013,14 @@ def pairTalens(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, 
                 offTargetPairs = has_Off_targets(tale1, tale2, TALEN_OFF_TARGET_MIN, TALEN_OFF_TARGET_MAX)
 
                 # Makes tale1 and tale2 into a Pair object, and adds to list of Pair objects
-                pairs.append(Pair(tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, g_RVD, minResSiteLen))
+                pairs.append(Pair(tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, g_RVD,
+                                  minResSiteLen))
 
     return pairs
 
 
-def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, enzymeCo, maxOffTargets, minResSiteLen, offtargetMaxDist):
+def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, enzymeCo, maxOffTargets, minResSiteLen,
+             offtargetMaxDist):
     pairs = []
 
     for i in range(len(taleList)-1):
@@ -2068,7 +2031,7 @@ def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, en
             tale2 = taleList[j]
 
             if tale1.start + taleMaxDistance < tale2.start:
-                continue 
+                continue
 
             elif tale1.start + taleMinDistance < tale2.start and tale1.strand != tale2.strand:
 
@@ -2090,7 +2053,7 @@ def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, en
                 tale1End = int(tale1coords[tale1coords.find('-')+1:])
 
                 # The coordinates of the tale within the exon e.g. 160-175
-                tale2coords = tale2.name[tale2.name.find('_')+1:]                            
+                tale2coords = tale2.name[tale2.name.find('_')+1:]
 
                 # Just the first coordinate, corresponding to the beginning of the second tale e.g. 160
                 tale2Start = int(tale2coords[:tale2coords.find('-')])
@@ -2098,13 +2061,14 @@ def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, en
                 # sequence of spacer between end of tale1 and beginning of tale2
                 spacerSeq = exonSeq[tale1End:tale2Start]
 
-                spacerSize = len(spacerSeq)                         
+                spacerSize = len(spacerSeq)
 
                 # Calculates off-target pairs for tale1 and tale2 (see below)
                 offTargetPairs = has_Off_targets(tale1, tale2, taleMinDistance-guideSize, offtargetMaxDist)
 
                 # Makes tale1 and tale2 into a Pair object, and adds to list of Pair objects
-                pairs.append(Nickase(tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, minResSiteLen))
+                pairs.append(Nickase(tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets,
+                                     minResSiteLen))
 
     return pairs
 
@@ -2112,18 +2076,20 @@ def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, en
 def has_Off_targets(tale1, tale2, offTargetMin, offTargetMax):
     """ Returns the number of off-targets for a pair of TALENs (10-24bp apart) """
 
-    offTargetPairs = []  
+    offTargetPairs = []
 
-    # Calls sort function to sort off-targets by chromosome and chromosome position. Bowtie ranks them according to quality of hit
+    # Calls sort function to sort off-targets by chromosome and chromosome position.
+    # Bowtie ranks them according to quality of hit
     tale1.sort_offTargets()
     tale2.sort_offTargets()
-  
-    ### FIX: Eivind to write this code properly. Include a way to step backwards, so as not to miss any hits. Need to make a queue..?
+
+    ### FIX: Eivind to write this code properly. Include a way to step backwards, so as not to miss any hits.
+    # Need to make a queue..?
     for i in range(len(tale1.offTargets)):
         hit1 = tale1.offTargets[i]
 
         for j in range(len(tale2.offTargets)):
-            hit2 = tale2.offTargets[j]          
+            hit2 = tale2.offTargets[j]
 
             # Determines whether 2 tales are on the same chromosome and 10-24 bp apart.
             if hit2.chrom == hit1.chrom and offTargetMin <= abs(hit2.start-hit1.start) <= offTargetMax:
@@ -2143,15 +2109,14 @@ def clusterPairs(pairs):
 
     # Compares each TALE pair to previous pair in list to see whether redundant. Assigns cluster number accordingly
     for i in range(1,len(pairs)):
-        cur = pairs[i]      
+        cur = pairs[i]
         prev = pairs[i-1]
-        
-        # Specifically, compares location of spacer (by comparing location of tales) to see whether there is overlap, and therefore TALE pairs are redundant
-        if ((cur.spacerStart <= prev.spacerEnd) and (cur.spacerEnd >= prev.spacerStart) and inCluster < PRIMER_OFF_TARGET_MIN):
 
-            # Checks whether spacer overlap is >50%, in which case tale pairs are somewhat redundant, and should be part of the same cluster
-            # if (cur.spacerEnd - prev.spacerStart+1) > (0.9*(cur.spacerSize+prev.spacerSize)):
-                # Adds current cluster to pairs list
+        # Specifically, compares location of spacer (by comparing location of tales) to see whether there is overlap,
+        # and therefore TALE pairs are redundant
+        if ((cur.spacerStart <= prev.spacerEnd) and (cur.spacerEnd >= prev.spacerStart) and
+                    inCluster < PRIMER_OFF_TARGET_MIN):
+
             cur.cluster = cluster
             inCluster += 1
         else:
@@ -2159,7 +2124,7 @@ def clusterPairs(pairs):
             cluster += 1
             cur.cluster = cluster
             inCluster = 0
-    
+
     return (cluster, pairs)
 
 
@@ -2167,8 +2132,6 @@ def eval_TALENS_sequence(name, targetSize, dna, num, fastaFile, downstream5prim,
     """ Evaluates an N-mer as a potential TALENs target site """
     del downstream5prim, downstream3prim
     found = False
-
-    # One TALE must start with a T and the other must end in an A, such that each on its respective strand begins with a T
     if dna[0] == "T":
         # dna = Seq(dna).reverse_complement()    
         fastaFile.write('>%s_%d-%d\n%s\n' % (name, num, num+targetSize, dna))
@@ -2222,230 +2185,265 @@ def FastaToViscoords(sequences, strand):
 ##
 
 def getAllowedFivePrime(allowed):
-
-    newAllowed = []
+    new_allowed = []
     for el in allowed.split(","):
         if el[0] == 'N' and el[1] == 'N':
-            return ("AA", "AC", "AG", "AT", "CA", "CC", "CG", "CT", "GA", "GC", "GG", "GT", "TA", "TC", "TG", "TT")
+            return "AA", "AC", "AG", "AT", "CA", "CC", "CG", "CT", "GA", "GC", "GG", "GT", "TA", "TC", "TG", "TT"
         elif el[0] == 'N':
-            newAllowed.extend(["A"+el[1], "C"+el[1], "G"+el[1], "T"+el[1]])
+            new_allowed.extend(["A"+el[1], "C"+el[1], "G"+el[1], "T"+el[1]])
         elif el[1] == 'N':
-            newAllowed.extend([el[0]+"A", el[0]+"C", el[0]+"G", el[0]+"T"])
+            new_allowed.extend([el[0]+"A", el[0]+"C", el[0]+"G", el[0]+"T"])
         else:
-            newAllowed.append(el)
-
-    return dict(zip(newAllowed, [True] * len(newAllowed)))
-
-
-def coordsToJson(coords, cdsStart, cdsEnd, strand):
-    newCoords = []
-
-    for coord in coords:
-        if coord[2] <= cdsStart:
-            coord.append(VIS_WIDTH['UTR'])
-            coord.append(strand)
-            newCoords.append(coord)
-        elif coord[1] >= cdsEnd: 
-            coord.append(VIS_WIDTH['UTR'])
-            coord.append(strand)
-            newCoords.append(coord)
-        else:
-            if cdsStart > coord[1] and cdsStart < coord[2]:
-                newCoords.append([coord[0], coord[1], cdsStart, 0, VIS_WIDTH['UTR'], strand])
-#                newCoords.append([coord[0], cdsStart, coord[2], coord[3], VIS_WIDTH['CDS']])
-                coord[1] = cdsStart
+            new_allowed.append(el)
+    return dict(zip(new_allowed, [True] * len(new_allowed)))
 
 
-            if cdsEnd > coord[1] and cdsEnd < coord[2]:
-#                newCoords.append([coord[0], coord[1], cdsEnd, 0, VIS_WIDTH['CDS']])
-                newCoords.append([coord[0], cdsEnd, coord[2], coord[3], VIS_WIDTH['UTR'], strand])
-                coord[2] = cdsEnd
-                coord[3] = 0
-
-            newCoords.append([coord[0], coord[1], coord[2], coord[3], VIS_WIDTH['CDS'], strand])
-
-#           if coord[1] >= cdsStart and coord[2] <= cdsEnd:
-#                newCoords.append([coord[0], coord[1], coord[2], coord[3], VIS_WIDTH['CDS']])
-
-
-#    sys.stderr.write("NEWCOORDS: %s\n" % newCoords)
-    return newCoords
+def bins(x): # from ranges to bins
+    x = list(x)
+    x.sort()
+    x = numpy.array(x)
+    if x.size == 1:
+        return x, x
+    dx, = numpy.nonzero(numpy.diff(x) > 1)
+    starts = numpy.append(x[0], x[dx + 1])
+    ends = numpy.append(x[dx], x[-1])
+    return starts, ends
 
 
-def parseTargets(targetString, genome, use_db, data, padSize, targetRegion, exonSubset, promoter_bp):
+def parseTargets(target_string, genome, use_db, data, pad_size, target_region, exon_subset, promoter_bp,
+                 index_dir, output_dir, use_union, make_vis, guideLen):
     targets = []
-    displayIndices = []
-    visCoords = []
-    targetSize = 0
-    target_strand = None
+    vis_coords = []
+    target_strand = "+"
+    target_size = 0
+    gene, isoform, gene_isoforms = (None, None, set())
 
     pattern = re.compile("(([\.\w]+):)?([\.\,\d]+)\-([\.\,\d]+)")
-    isCoordinate = pattern.match(targetString)
+    is_coordinate = pattern.match(str(target_string))
 
-    if isCoordinate: 
-        
+    if is_coordinate:
         if ISOFORMS:
-                sys.stderr.write("--isoforms is not yet ready with coordinate search.\n")
-                sys.exit(EXIT['ISOFORMS_ERROR'])
-                
-        # Target specified as coordinate
-        if target_strand == None:
-            target_strand = "+"
-        elif target_strand == "-":
-            sys.stderr.write("All targets must be on the same strand.\n")
-            sys.exit(EXIT['GENE_ERROR'])
+            sys.stderr.write("--isoforms is not working with coordinate search.\n")
+            sys.exit(EXIT['ISOFORMS_ERROR'])
 
+        chrom = is_coordinate.group(2)
+        vis_coords.append({"exons": [], "ATG": [], "name": chrom})
 
-        ## CHROMOSOME LOCATION
-        chrom = isCoordinate.group(2)
-        i = 1
-
-        for target in targetString.split(";"):
+        for target in target_string.split(";"):
             m = pattern.match(target)
-
             if m:
                 if m.group(2) != None and chrom != m.group(2):
-                    sys.stderr.write("Can't target regions on separate chromosomes (%s != %s).\n" % (chrom, m.group(1)))
+                    sys.stderr.write(
+                        "Can't target regions on separate chromosomes (%s != %s).\n" % (chrom, m.group(2)))
                     sys.exit(EXIT['GENE_ERROR'])
 
-                startPos = m.group(3)
-                endPos = m.group(4)
+                start_pos = m.group(3)
+                end_pos = m.group(4)
+                start_pos = int(start_pos.replace(",", "").replace(".", ""))
+                end_pos = int(end_pos.replace(",", "").replace(".", ""))
+                target_size += end_pos - start_pos + 1
 
-                startPos = startPos.replace(",","").replace(".","")
-                endPos = endPos.replace(",","").replace(".","")
-
-                startPos = int(startPos)
-                endPos = int(endPos)
-                targetSize += endPos - startPos + 1
-
-                if (startPos >= endPos):
-                    sys.stderr.write("Start position (%s) must be smaller than end position (%s)\n" % (startPos, endPos))
+                if start_pos >= end_pos:
+                    sys.stderr.write(
+                        "Start position (%s) must be smaller than end position (%s)\n" % (start_pos, end_pos))
                     sys.exit(EXIT['GENE_ERROR'])
-                    
-                targets.append("%s:%s-%s" % (chrom, max(0, startPos-padSize), endPos+padSize))
-                visCoords.append([chrom, startPos, endPos, 0, 10, "+"])
-                displayIndices.append(i)
-                i += 1
+
+                targets.append("%s:%s-%s" % (chrom, max(0, start_pos - pad_size), end_pos + pad_size))
+                if make_vis:
+                    vis_coords[0]["exons"].append([chrom, start_pos, end_pos, 0, True, "+"])
             else:
                 sys.stderr.write("Unknown format: %s\n" % (target))
                 sys.exit(EXIT['GENE_ERROR'])
-                
+
     else:
-        # Check whether index is provided. For cases where you have multiple entries with same name.
-        index = -1
-        pattern = re.compile("(.+):::(\d+)")
-        m = pattern.match(targetString)
-        if m:
-            targetString = m.group(1)
-            index = int(m.group(2))
-
-        ## GENE / TRANSCRIPT
         if use_db:
-            (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_db(targetString, genome, data, padSize, index)
             if ISOFORMS:
-                sys.stderr.write("--isoforms is not yet ready with database search.\n")
+                sys.stderr.write("--isoforms is not working with database search.\n")
                 sys.exit(EXIT['ISOFORMS_ERROR'])
+            txInfo = geneToCoord_db(target_string, genome, data)
         else:
-            (visCoords, cdsStart, cdsEnd, strand) = geneToCoord_file(targetString, data, padSize)
+            txInfo = geneToCoord_file(target_string, data)
 
-        if target_strand == None:
-            target_strand = strand
-        elif target_strand != strand:
-            sys.stderr.write("All targets must be on the same strand.\n")
+        target_chr = set([x[0] for x in txInfo])
+        target_strand = set([x[6] for x in txInfo])
+        isoforms = [str(x[3]) for x in txInfo]
+        if len(target_strand) > 1 or len(target_chr) > 1:
+            sys.stderr.write(
+                "Specify which isoform you want to target as your query " + str(target_string) +
+                " returns many isoforms: " + ', '.join(isoforms) +
+                " which are from either inconsistent strands or chromosomes.\n")
             sys.exit(EXIT['GENE_ERROR'])
-
-        # Subset on exons
-        coords = copy.deepcopy(visCoords)
-        visCoords = coordsToJson(visCoords, cdsStart, cdsEnd, strand)
-
-        if strand == "-":
-            coords.reverse()
-
-        coords, displayIndices = subsetExons(exonSubset, coords)
-
-        if strand == "-":
-            coords.reverse()
-            displayIndices.reverse()
-
-        # Truncate to region
-        if targetRegion == "CODING":
-            coords, displayIndices = truncateToCoding(cdsStart, cdsEnd, coords, displayIndices)
-        elif targetRegion == "UTR5":
-            if strand == "+":
-                coords, displayIndices = truncateToUTR5(cdsStart, coords, displayIndices)
-            else:
-                coords, displayIndices = truncateToUTR3(cdsEnd, coords, displayIndices)
-        elif targetRegion == "PROMOTER":
-                coords, displayIndices = truncateToPROMOTER(strand, coords, displayIndices, promoter_bp)
-        elif targetRegion == "UTR3":
-            if strand == "+":
-                coords, displayIndices = truncateToUTR3(cdsEnd, coords, displayIndices)
-            else:
-                coords, displayIndices = truncateToUTR5(cdsStart, coords, displayIndices)
-        elif targetRegion == "SPLICE":
-            coords, displayIndices = truncateToSplice(coords, displayIndices)
-        elif targetRegion != "WHOLE":
-            sys.stderr.write("Unknown region: %s\n" % targetRegion);
-            sys.exit(EXIT['PYTHON_ERROR']);
-
-        for exon in coords:
-            targetSize += exon[2] - exon[1] + 1
-
-        # Pad since can bind outside exons
-        if ISOFORMS:
-            targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1], x[2]), coords))
         else:
-            targets.extend(map(lambda x : "%s:%s-%s" % (x[0], x[1]-padSize, x[2]+padSize), coords))
+            target_strand = list(target_strand)[0]
+            target_chr = list(target_chr)[0]
 
-    if targetSize > TARGET_MAX:
-        sys.stderr.write("Search region is too large (%s nt). Maximum search region is %s nt.\n" % (targetSize, TARGET_MAX))
+        for tx in txInfo:
+            tx = list(tx)
+            tx[4] = int(tx[4])
+            tx[5] = int(tx[5])
+            starts = tx[1].split(",")
+            ends = tx[2].split(",")
+            del starts[-1]
+            del ends[-1]
+            starts = map(int, starts)
+            ends = map(int, ends)
+            tx_vis = { "exons": [], "ATG": [], "name": tx[3] }
+
+            if make_vis:
+                intron_size = [int(starts[x + 1]) - int(ends[x]) for x in range(len(starts) - 1)]
+                intron_size.append(0)
+                # tx_vis exons are [chr, start, end, intron_size, isIntron, strand]
+                for e in range(len(starts)):
+                    if ends[e] <= tx[4] or starts[e] >= tx[5]:
+                        tx_vis["exons"].append([tx[0], starts[e], ends[e], intron_size[e], True, tx[6]])
+                    else:
+                        if starts[e] < tx[4] < ends[e]:
+                            tx_vis["exons"].append([tx[0], starts[e], tx[4], 0, True, tx[6]])
+                            starts[e] = tx[4]
+
+                        if starts[e] < tx[5] < ends[e]:
+                            tx_vis["exons"].append([tx[0], tx[5], ends[e], intron_size[e], True, tx[6]])
+                            ends[e] = tx[5]
+                            intron_size[e] = 0
+
+                        tx_vis["exons"].append([tx[0], starts[e], ends[e], intron_size[e], False, tx[6]])
+
+                tx_vis["exons"].sort(key = lambda x: x[1]) # sort on starts
+                # ATG locations
+                prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (
+                    CONFIG["PATH"]["TWOBITTOFA"], tx[0], int(tx[4]) + 1, int(tx[5]) + 1, index_dir,
+                    genome, output_dir), stdout=PIPE, shell=True)
+                iso_seq = prog.communicate()
+                if prog.returncode != 0:
+                    sys.stderr.write("Running twoBitToFa when searching isoform sequence failed\n")
+                    sys.exit(EXIT['TWOBITTOFA_ERROR'])
+
+                iso_seq = iso_seq[0]
+                iso_seq = iso_seq.split("\n")
+                iso_seq = Seq(''.join(iso_seq[1:]).upper())
+                # splicing
+                iso_seq_spl = ""
+                for e in tx_vis["exons"]:
+                    if not e[4]:
+                        iso_seq_spl += iso_seq[(e[1] - tx[4]):(e[2] - tx[4])]
+                atg = "ATG" if tx[6] != "-" else "CAT"
+                tx_vis["ATG"] = [m.start() + tx[4] for m in re.finditer(atg, str(iso_seq_spl)) if m.start() % 3 == 0]
+                vis_coords.append(tx_vis)
+
+            # restrict isoforms
+            coords = map(lambda x: [tx[0], x[0], x[1]], zip(starts, ends))
+            if tx[6] == "-":
+                coords.reverse()
+            coords = subsetExons(exon_subset, coords)
+            if tx[6] == "-":
+                coords.reverse()
+
+            # Truncate to region
+            if target_region == "CODING":
+                coords = truncateToCoding(tx[4], tx[5], coords)
+            elif target_region == "UTR5":
+                if tx[6] == "+":
+                    coords = truncateToUTR5(tx[4], coords)
+                else:
+                    coords = truncateToUTR3(tx[5], coords)
+            elif target_region == "PROMOTER":
+                coords = truncateToPROMOTER(tx[6], coords, promoter_bp)
+            elif target_region == "UTR3":
+                if tx[6] == "+":
+                    coords = truncateToUTR3(tx[5], coords)
+                else:
+                    coords = truncateToUTR5(tx[4], coords)
+            elif target_region == "SPLICE":
+                coords = truncateToSplice(coords)
+            elif target_region != "WHOLE":
+                sys.stderr.write("Unknown region: %s\n" % target_region)
+                sys.exit(EXIT['PYTHON_ERROR'])
+
+            # compute intersection/union on all exons
+            if txInfo[0][3] == tx[3]:  # if this is first of the isoforms
+                for x in coords:
+                    targets.extend(range(x[1], x[2] + 1))
+                targets = set(targets)
+            else:
+                if not use_union:
+                    targets_ = []
+                    for x in coords:
+                        targets_.extend(range(x[1], x[2] + 1))
+
+                    if len(targets_) >= guideLen:
+                        # cover cases where some transcripts provide short or none bp
+                        targets = targets & set(targets_)
+
+                    if len(targets) < guideLen:
+                        sys.stderr.write(
+                            "Computing intersection over specified isoforms resulted in lack of targets." +
+                            " Consider either using specific isoform as input: " + ', '.join(isoforms) +
+                            " or using --consensusUnion to compute union instead of intersection " +
+                            "of your isoforms.")
+                        sys.exit(EXIT['GENE_ERROR'])
+                else:
+                    targets_ = []
+                    for x in coords:
+                        targets_.extend(range(x[1], x[2] + 1))
+                    targets = targets | set(targets_)
+
+        target_size = len(targets)
+        starts, ends = bins(targets)
+
+        if ISOFORMS:
+            targets = map(lambda x: "%s:%s-%s" % (target_chr, x[0], x[1]), zip(starts, ends))
+        else:
+            targets = map(lambda x: "%s:%s-%s" % (target_chr, x[0] - pad_size, x[1] + pad_size), zip(starts, ends))
+
+    if target_size > TARGET_MAX:
+        sys.stderr.write("Search region is too large (%s nt). Maximum search region is %s nt.\n" % (
+            target_size, TARGET_MAX))
         sys.exit(EXIT['GENE_ERROR'])
 
-    return (targets, displayIndices, visCoords, target_strand)
+    return targets, vis_coords, target_strand, gene, isoform, gene_isoforms
 
 
-def parseFastaTarget(fastaFile, candidateFastaFile, targetSize, evalAndPrintFunc):
+def parseFastaTarget(fasta_file, candidate_fasta_file, target_size, eval_and_print):
     """ Parse a FASTA file as input for targeting """
 
-    seq_name = "sequence"
-    sequence = ""
-    fastaFile = list(SeqIO.parse(fastaFile, 'fasta'))
-    seq_name, sequence = fastaFile[0].id, str(fastaFile[0].seq)
-    
+    fasta_file = list(SeqIO.parse(fasta_file, 'fasta'))
+    seq_name, sequence = fasta_file[0].id, str(fasta_file[0].seq)
+
     name = "%s:0-%s" % (seq_name, len(sequence))
-    idName = "C:" + name 
+    id_name = "C:" + name
     sequence = sequence.upper()
     sequence = "".join(sequence.split())
 
-    dna_pattern = re.compile(r'([^ACGTNacgtn])')    
+    dna_pattern = re.compile(r'([^ACGTNacgtn])')
     if dna_pattern.search(sequence):
         sys.stderr.write("Input sequence contains illegal characters.\n")
-        sys.exit(EXIT['GENE_ERROR']);
+        sys.exit(EXIT['GENE_ERROR'])
 
-        
     sequences = {}
-    candidateFastaFile = open(candidateFastaFile, 'w')
+    candidate_fasta_file = open(candidate_fasta_file, 'w')
 
     # Loop over sequence, write every k-mer into file in which k-mer ends in as PAM in fasta format 
-    for num in range(0,len(sequence)-(targetSize-1)):
-        
+    for num in range(0, len(sequence)-(target_size-1)):
+
         if (num - DOWNSTREAM_NUC) > 0:
                 start5prim = num - DOWNSTREAM_NUC
         else:
                 start5prim = 0
-                
-        if (num + targetSize + DOWNSTREAM_NUC) > len(sequence):
+
+        if (num + target_size + DOWNSTREAM_NUC) > len(sequence):
                 end3prim = len(sequence)
         else:
-                end3prim = num + targetSize + DOWNSTREAM_NUC
+                end3prim = num + target_size + DOWNSTREAM_NUC
 
-        downstream_5prim = sequence[(start5prim):num] 
-        downstream_3prim = sequence[(num + targetSize):end3prim]
-        
-        if evalAndPrintFunc(idName, targetSize, sequence[num:(num + targetSize)], num, candidateFastaFile, downstream_5prim, downstream_3prim):
-            sequences[idName] = sequence
+        downstream_5prim = sequence[start5prim:num]
+        downstream_3prim = sequence[(num + target_size):end3prim]
 
-    return (sequences, [name], [1], [[seq_name, 1, len(sequence), 0, 20, "+"]], sequence, "+")
+        if eval_and_print(id_name, target_size, sequence[num:(num + target_size)], num,
+                          candidate_fasta_file, downstream_5prim, downstream_3prim):
+            sequences[id_name] = sequence
+
+    return sequences, [name], [{"exons": [seq_name, 1, len(sequence), 0, 20, "+"],
+                                "ATG": [], "name": seq_name}], sequence, "+"
 
 
 def hyphen_range(s):
@@ -2458,11 +2456,12 @@ def hyphen_range(s):
 
     for x in s.split(','):
         t = x.split('-')
-        if len(t) not in [1,2]: raise SyntaxError("Range is not properly formatted: "+ s)
-        if len(t)==1: 
-            r.add(int(t[0])) 
-        else: 
-            r.update(set(range(int(t[0]),int(t[1])+1)))
+        if len(t) not in [1, 2]:
+            raise SyntaxError("Range is not properly formatted: " + s)
+        if len(t) == 1:
+            r.add(int(t[0]))
+        else:
+            r.update(set(range(int(t[0]), int(t[1]) + 1)))
 
     l = list(r)
     l.sort()
@@ -2471,19 +2470,14 @@ def hyphen_range(s):
 
 
 def subsetExons(exons, targets):
-    indices = range(len(targets)+1)[1:]
-
     if exons:
         indices = hyphen_range(exons)
-
         for index in indices:
             if int(index) > len(targets):
                 sys.stderr.write("That exon does not exist\n")
                 sys.exit(EXIT['PYTHON_ERROR'])
-                
-        targets = [targets[int(i)-1] for i in indices]      # indices is a list of exon numbers -1 e.g. exon 2 is [1]
-
-    return (targets, indices)
+        targets = [targets[int(i)-1] for i in indices] # indices is a list of exon numbers -1 e.g. exon 2 is [1]
+    return targets
 
 
 def connect_db(database_string):
@@ -2495,7 +2489,7 @@ def connect_db(database_string):
         sys.exit(EXIT["DB_ERROR"])
 
     try:
-        db = MySQLdb.connect(user=m.group(1), passwd=m.group(2), host=m.group(3), db=m.group(4))
+        db = MySQLdb.connect(user = m.group(1), passwd = m.group(2), host = m.group(3), db = m.group(4))
     except:
         sys.stderr.write("Could not connect to database\n")
         sys.exit(EXIT['DB_ERROR'])
@@ -2504,7 +2498,7 @@ def connect_db(database_string):
 
 
 def getMismatchVectors(pam, gLength, cong):
-    
+
     allowed = [True] * (gLength -len(pam))
     count = [True] * (gLength -len(pam))
 
@@ -2522,7 +2516,7 @@ def getMismatchVectors(pam, gLength, cong):
 
 
 def getCpf1MismatchVectors(pam, gLength):
-    
+
     allowed = [True] * (gLength -len(pam))
     count = [True] * (gLength -len(pam))
 
@@ -2541,13 +2535,13 @@ def mode_select(var, index, MODE):
 
     if var is not None:
         return var
-        
+
     if MODE == CRISPR:
         return CRISPR_DEFAULT[index]
 
     elif MODE == TALENS:
         return TALEN_DEFAULT[index]
-    
+
     elif MODE == CPF1:
         return CPF1_DEFAULT[index]
 
@@ -2563,10 +2557,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("targets", help="Target genes or regions", metavar="TARGET_REGIONS")
     parser.add_argument("-r", "--gRVD", default="NH ", dest="g_RVD", action="store_const", const="NN ",  help="Use RVD 'NN' instead of 'NH' for guanine nucleotides. 'NH' appears to be more specific than 'NN' but the choice depends on assembly kit.")
-    parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")   
-    parser.add_argument("-e", "--exon", help="Comma separated list of exon indices. Only find sites in this subset. ", metavar="EXON_NUMBER", dest="exons")   
+    parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")
+    parser.add_argument("-e", "--exon", help="Comma separated list of exon indices. Only find sites in this subset. ", metavar="EXON_NUMBER", dest="exons")
     parser.add_argument("-TP", "--targetPromoter", default=200, type=int, help="how many bp to target upstream and downstream of TSS")
-    parser.add_argument("-G", "--genome", default="danRer7", metavar="GENOME", help="The genome to search.") 
+    parser.add_argument("-G", "--genome", default="danRer7", metavar="GENOME", help="The genome to search.")
     parser.add_argument("-g", "--guideSize", default=None, type=int, metavar="GUIDE_SIZE", help="The size of the guide RNA.")
     parser.add_argument("-c", "--scoreGC", default=None, action="store_false", help="Score GC content. True for CRISPR, False for TALENs.")
     parser.add_argument("-SC", "--noScoreSelfComp", default=None, action="store_false", help="Do not penalize self-complementarity of CRISPR.")
@@ -2576,7 +2570,7 @@ def main():
     parser.add_argument("-T", "--MODE", default=1, type=int, choices=[1, 2, 3, 4], help="Set mode (int): default is Cas9 = 1, Talen = 2, Cpf1 = 3, Nickase = 4")
     parser.add_argument("--taleMin", default=14, type=int, help="Minimum distance between TALENs. Default is 14.")  # 14 + 18(length of TALE) = 32
     parser.add_argument("--taleMax", default=20, type=int, help="Maximum distance between TALENs. Default is 20.")  # 20 + 18(length of TALE) = 38
-    parser.add_argument("--nickaseMin", default=10, type=int, help="Minimum distance between TALENs. Default is 10.") 
+    parser.add_argument("--nickaseMin", default=10, type=int, help="Minimum distance between TALENs. Default is 10.")
     parser.add_argument("--nickaseMax", default=31, type=int, help="Maximum distance between TALENs. Default is 31.")
     parser.add_argument("--offtargetMaxDist", default=100, type=int, help="Maximum distance between offtargets for Nickase. Default is 100.")
     parser.add_argument("-f", "--fivePrimeEnd", default="NN", metavar="FIVE_PRIME_END", help="Specifies the requirement of the two nucleotides 5' end of the CRISPR guide: A/C/G/T/N. Default: NN.")
@@ -2601,8 +2595,9 @@ def main():
     parser.add_argument("--filterGCmin", default=0, type=int, help="Minimum required GC percentage. Default is 0.")
     parser.add_argument("--filterGCmax", default=100, type=int, help="Maximum allowed GC percentage. Default is 100.")
     parser.add_argument("--filterSelfCompMax", default=-1, type=int, help="Maximum acceptable Self-complementarity score. Default is -1, no filter.")
+    parser.add_argument("-cU", "--consensusUnion", default=False, action="store_true", help="When calculating consensus sequence from multiple isoforms default uses intersection. This option specifies union of isoforms.")
     args = parser.parse_args()
-    
+
     # set isoforms to global as it is influencing many steps
     global ISOFORMS
     ISOFORMS = args.isoforms
@@ -2682,33 +2677,39 @@ def main():
         db = cdb.cursor()
         use_db = True
     else:
-        db = "%s/%s.gene_table" % (CONFIG["PATH"]["GENE_TABLE_INDEX_DIR"], args.genome)
+        db = "%s/%s.gene_table" % (
+            CONFIG["PATH"]["GENE_TABLE_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"],
+            args.genome)
         use_db = False
 
     ## Create output directory if it doesn't exist
     if not os.path.isdir(args.outputDir):
         os.mkdir(args.outputDir)
-    
-    candidateFastaFile = '%s/sequence.fa' % args.outputDir
+
+    candidate_fasta_file = '%s/sequence.fa' % args.outputDir
+    gene, isoform, gene_isoforms = (None, None, set())
     if args.fasta:
-        sequences, targets, displayIndices, visCoords, fastaSequence, strand = parseFastaTarget(args.targets, candidateFastaFile, args.guideSize, evalSequence)        
+        sequences, targets, visCoords, fastaSequence, strand = parseFastaTarget(
+            args.targets, candidate_fasta_file, args.guideSize, evalSequence)
     else:
-        targets, displayIndices, visCoords, strand = parseTargets(args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter)
-        sequences, fastaSequence = coordToFasta(targets, candidateFastaFile, args.outputDir, args.guideSize, evalSequence, CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.genome, strand)
-    
-    gene, isoform, gene_isoforms = geneIsoforms(args.targets, db) if ISOFORMS else (None, None, set())
-    
+        targets, visCoords, strand, gene, isoform, gene_isoforms = parseTargets(
+            args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter,
+            CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.outputDir, args.consensusUnion, args.jsonVisualize, args.guideSize)
+        sequences, fastaSequence = coordToFasta(
+            targets, candidate_fasta_file, args.outputDir, args.guideSize, evalSequence,
+            CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.genome, strand)
+
     ## Converts genomic coordinates to fasta file of all possible k-mers
     if len(sequences) == 0:
         sys.stderr.write("No target sites\n")
         sys.exit()
-        
+
     # Run bowtie and get results
-    bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidateFastaFile, args.outputDir, 
+    bowtieResultsFile = runBowtie(len(args.PAM), args.uniqueMethod_Cong, candidate_fasta_file, args.outputDir,
                                   int(args.maxOffTargets), CONFIG["PATH"]["ISOFORMS_INDEX_DIR"] if ISOFORMS else CONFIG["PATH"]["BOWTIE_INDEX_DIR"],
                                   args.genome, int(args.maxMismatches))
-    results = parseBowtie(guideClass, bowtieResultsFile, True, displayIndices, targets, args.scoreGC, args.scoreSelfComp, 
-                          args.backbone, args.replace5P, args.maxOffTargets, allowedMM, countMM, args.PAM, 
+    results = parseBowtie(guideClass, bowtieResultsFile, True, args.scoreGC, args.scoreSelfComp,
+                          args.backbone, args.replace5P, args.maxOffTargets, countMM, args.PAM,
                           args.MODE != TALENS and not ISOFORMS,
                           args.scoringMethod, args.genome, gene, isoform, gene_isoforms)  # TALENS: MAKE_PAIRS + CLUSTER
 
@@ -2716,7 +2717,7 @@ def main():
         for guide in results:
             if guide.offTargetsMM[0] > 0:
                 guide.score = guide.score - SINGLE_OFFTARGET_SCORE[0]
-                
+
     if ISOFORMS:
         for guide in results:
             other_isoforms = guide.gene_isoforms.remove(guide.isoform) if guide.isoform in guide.gene_isoforms else guide.gene_isoforms
@@ -2747,7 +2748,7 @@ def main():
                     endIndex = 22
                 else:
                     endIndex = 21
-                
+
                 while x < endIndex:
                     y = 0
                     while y < 4:
@@ -2783,7 +2784,7 @@ def main():
                     pair.score = pair.score - SCORE["OFFTARGET_PAIR_SAME_STRAND"]
 
         cluster, results = clusterPairs(pairs)
-        
+
     elif args.MODE == NICKASE:
         pairs = pairCas9(results, sequences, args.guideSize, int(args.nickaseMin), int(args.nickaseMax), args.enzymeCo, args.maxOffTargets, args.minResSiteLen, args.offtargetMaxDist)
 
@@ -2814,50 +2815,50 @@ def main():
             make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
 
 
-    ## Print results 
+    ## Print results
     resultCoords = []
-    
+
     if ISOFORMS:
-        print "Rank\tTarget sequence\tGenomic location\tExon\tGene\tIsoform\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3\tConserved\tIsoformsMM0\tIsoformsMM1\tIsoformsMM2\tIsoformsMM3"
+        print "Rank\tTarget sequence\tGenomic location\tGene\tIsoform\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3\tConserved\tIsoformsMM0\tIsoformsMM1\tIsoformsMM2\tIsoformsMM3"
         for i in range(len(sortedOutput)):
-            print "%s\t%s" % (i+1, sortedOutput[i])            
+            print "%s\t%s" % (i+1, sortedOutput[i])
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
-    else:                                                                         
+    else:
         if args.MODE == CRISPR:
-            common_header = "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
+            common_header = "Rank\tTarget sequence\tGenomic location\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
             if args.scoringMethod == "ALL":
                 print(common_header + "\tXU_2015\tDOENCH_2014\tDOENCH_2016\tMORENO_MATEOS_2015\tCHARI_2015\tG_20")
             else:
                 print(common_header + "\tEfficiency")
             for i in range(len(sortedOutput)):
-                print "%s\t%s" % (i+1, sortedOutput[i])            
+                print "%s\t%s" % (i+1, sortedOutput[i])
                 resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
-                
+
         elif args.MODE == CPF1:
-            print "Rank\tTarget sequence\tGenomic location\tExon\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
+            print "Rank\tTarget sequence\tGenomic location\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
             for i in range(len(sortedOutput)):
-                print "%s\t%s" % (i+1, sortedOutput[i])            
+                print "%s\t%s" % (i+1, sortedOutput[i])
                 resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
-    
+
         elif args.MODE == TALENS or args.MODE == NICKASE:
-            
+
             if args.MODE == TALENS:
-                print "Rank\tTarget sequence\tGenomic location\tExon\tTALE 1\tTALE 2\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
+                print "Rank\tTarget sequence\tGenomic location\tTALE 1\tTALE 2\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
             else:
-                print "Rank\tTarget sequence\tGenomic location\tExon\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
+                print "Rank\tTarget sequence\tGenomic location\tCluster\tOff-target pairs\tOff-targets MM0\tOff-targets MM1\tOff-targets MM2\tOff-targets MM3\tRestriction sites\tBest ID"
             finalOutput = []
             for cluster in listOfClusters:  ## FIX: WHY ARE THERE EMPTY CLUSTERS???
                 if len(cluster) == 0:
                     continue
-    
+
                 finalOutput.append(cluster[0])
-    
+
             sortedFinalOutput = sortOutput(finalOutput)
             resultCoords = [[j+1, sortedFinalOutput[j].spacerStart, sortedFinalOutput[j].score, sortedFinalOutput[j].spacerSize, sortedFinalOutput[j].strand, sortedFinalOutput[j].ID, sortedFinalOutput[j].tale1.start, sortedFinalOutput[j].tale2.end] for j in range(len(sortedFinalOutput))]
-    
+
             for i in range(len(sortedFinalOutput)):
                 print "%s\t%s\t%s" % (i+1,sortedFinalOutput[i], sortedFinalOutput[i].ID)
-    
+
     # Print gene annotation files
 
     # FASTA file
@@ -2869,31 +2870,29 @@ def main():
 
     # Visualize with json
     if args.jsonVisualize:
-        strand = visCoords[0][5] # set based on first exon
-
         # Coordinates for gene
         visCoordsFile = open('%s/viscoords.json' % args.outputDir, 'w')
-        visCoords = sorted(visCoords,  key=itemgetter(1))
+        #visCoords = sorted(visCoords,  key=itemgetter(1))
         json.dump(visCoords, visCoordsFile)
 
         # Coordinates for sequence
         seqvis = FastaToViscoords(sequences, strand)
         seqvisFile = open('%s/seqviscoords.json' % args.outputDir, 'w')
         json.dump(seqvis, seqvisFile)
-     
+
         # Coordinates for cutters
-        cutCoord_file = open('%s/cutcoords.json' % args.outputDir, 'w') 
+        cutCoord_file = open('%s/cutcoords.json' % args.outputDir, 'w')
 
         cutcoords = []
         for i in range(len(resultCoords)):
             el = []
 
-            if args.MODE == CRISPR or args.MODE == CPF1:                
+            if args.MODE == CRISPR or args.MODE == CPF1:
                 el.append(i+1)
                 el.extend(resultCoords[i])
             elif args.MODE == TALENS or args.MODE == NICKASE:
                 el.extend(resultCoords[i])
-                
+
             cutcoords.append(el)
 
 
@@ -2910,11 +2909,12 @@ def main():
                     break
 
             coord.append(t)
-    
+
         json.dump(cutcoords, cutCoord_file)
 
         info = open("%s/run.info" % args.outputDir, 'w')
-        info.write("%s\t%s\t%s\t%s\t%s\n" % ("".join(args.targets), args.genome, args.MODE, args.uniqueMethod_Cong, args.guideSize))
+        info.write("%s\t%s\t%s\t%s\t%s\n" % ("".join(args.targets), args.genome, args.MODE, args.uniqueMethod_Cong,
+                                             args.guideSize))
         info.close()
 
 if __name__ == '__main__':
