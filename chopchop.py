@@ -37,7 +37,8 @@ from subprocess import Popen, PIPE
 ISOFORMS = False
 
 # CONFIG
-config_path = "config_local.json" if os.path.isfile("config_local.json") else "config.json"
+f_p = sys.path[0]
+config_path = f_p + "/config_local.json" if os.path.isfile(f_p + "/config_local.json") else f_p + "/config.json"
 with open(config_path) as f:
     CONFIG = json.load(f)
 
