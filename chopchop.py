@@ -2288,7 +2288,7 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
             del ends[-1]
             starts = map(int, starts)
             ends = map(int, ends)
-            tx_vis = { "exons": [], "ATG": [], "name": tx[3] }
+            tx_vis = {"exons": [], "ATG": [], "name": tx[3]}
 
             if make_vis:
                 intron_size = [int(starts[x + 1]) - int(ends[x]) for x in range(len(starts) - 1)]
@@ -2309,7 +2309,7 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
 
                         tx_vis["exons"].append([tx[0], starts[e], ends[e], intron_size[e], False, tx[6]])
 
-                tx_vis["exons"].sort(key = lambda x: x[1]) # sort on starts
+                tx_vis["exons"].sort(key=lambda x: x[1]) # sort on starts
                 # ATG locations
                 prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (
                     CONFIG["PATH"]["TWOBITTOFA"], tx[0], int(tx[4]) + 1, int(tx[5]) + 1, index_dir,
@@ -2328,7 +2328,24 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                     if not e[4]:
                         iso_seq_spl += iso_seq[(e[1] - tx[4]):(e[2] - tx[4])]
                 atg = "ATG" if tx[6] != "-" else "CAT"
-                tx_vis["ATG"] = [m.start() + tx[4] for m in re.finditer(atg, str(iso_seq_spl)) if m.start() % 3 == 0]
+                tx_atg = [m.start() for m in re.finditer(atg, str(iso_seq_spl)) if m.start() % 3 == 0]
+                tx_atg.sort()
+                for atg1 in tx_atg: # every ATG as 3 x 1bp as they can span across two exons...
+                    atg2 = atg1 + 1
+                    atg3 = atg1 + 2
+                    shift_atg1, shift_atg2, shift_atg3, exon_len = 0, 0, 0, 0
+                    for e in tx_vis["exons"]: # exons are sorted
+                        if not e[4]:
+                            exon_len += (e[2] - e[1])
+                            if atg1 > exon_len:
+                                shift_atg1 += e[3]
+                            if atg2 > exon_len:
+                                shift_atg2 += e[3]
+                            if atg3 > exon_len:
+                                shift_atg3 += e[3]
+                    tx_vis["ATG"].extend([atg1 + shift_atg1 + tx[4], atg2 + shift_atg2 + tx[4],
+                                          atg3 + shift_atg3 + tx[4]])
+
                 vis_coords.append(tx_vis)
 
             # restrict isoforms
@@ -2373,7 +2390,7 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
 
                     if len(targets_) >= guideLen:
                         # cover cases where some transcripts provide short or none bp
-                        targets = targets & set(targets_)
+                        targets &= set(targets_)
 
                     if len(targets) < guideLen:
                         sys.stderr.write(
@@ -2386,7 +2403,7 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                     targets_ = []
                     for x in coords:
                         targets_.extend(range(x[1], x[2] + 1))
-                    targets = targets | set(targets_)
+                    targets |= set(targets_)
 
         target_size = len(targets)
         starts, ends = bins(targets)
