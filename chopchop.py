@@ -2586,11 +2586,11 @@ def main():
     parser.add_argument("-R5", "--replace5P", default=None, metavar="REPLACE_5P", help="Replace bases from 5' end (with e.g. 'GG') ")  ## FIX: AT THE MOMENT THIS IS ONLY APPLIES TO FOLDING/SELF-COMPL
     parser.add_argument("-t", "--target", default="CODING", dest="targetRegion", help="Target the whole gene CODING/WHOLE/UTR5/UTR3/SPLICE. Default is CODING.")
     parser.add_argument("-T", "--MODE", default=1, type=int, choices=[1, 2, 3, 4], help="Set mode (int): default is Cas9 = 1, Talen = 2, Cpf1 = 3, Nickase = 4")
-    parser.add_argument("--taleMin", default=14, type=int, help="Minimum distance between TALENs. Default is 14.")  # 14 + 18(length of TALE) = 32
-    parser.add_argument("--taleMax", default=20, type=int, help="Maximum distance between TALENs. Default is 20.")  # 20 + 18(length of TALE) = 38
-    parser.add_argument("--nickaseMin", default=10, type=int, help="Minimum distance between TALENs. Default is 10.")
-    parser.add_argument("--nickaseMax", default=31, type=int, help="Maximum distance between TALENs. Default is 31.")
-    parser.add_argument("--offtargetMaxDist", default=100, type=int, help="Maximum distance between offtargets for Nickase. Default is 100.")
+    parser.add_argument("-taleMin", "--taleMin", default=14, type=int, help="Minimum distance between TALENs. Default is 14.")  # 14 + 18(length of TALE) = 32
+    parser.add_argument("-taleMax", "--taleMax", default=20, type=int, help="Maximum distance between TALENs. Default is 20.")  # 20 + 18(length of TALE) = 38
+    parser.add_argument("-nickaseMin", "--nickaseMin", default=10, type=int, help="Minimum distance between TALENs. Default is 10.")
+    parser.add_argument("-nickaseMax", "--nickaseMax", default=31, type=int, help="Maximum distance between TALENs. Default is 31.")
+    parser.add_argument("-offtargetMaxDist", "--offtargetMaxDist", default=100, type=int, help="Maximum distance between offtargets for Nickase. Default is 100.")
     parser.add_argument("-f", "--fivePrimeEnd", default="NN", metavar="FIVE_PRIME_END", help="Specifies the requirement of the two nucleotides 5' end of the CRISPR guide: A/C/G/T/N. Default: NN.")
     parser.add_argument("-n", "--enzymeCo", default="N", metavar="ENZYME_CO", help="The restriction enzyme company for TALEN spacer.")
     parser.add_argument("-R", "--minResSiteLen", type=int, default=4, help="The minimum length of the restriction enzyme.")
@@ -2607,13 +2607,13 @@ def main():
     parser.add_argument("-O", "--limitPrintResults", default=1000, dest="limitPrintResults", help="The number of results to print extended information for. Default 1000.")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
-    parser.add_argument("--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
-    parser.add_argument("--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
-    parser.add_argument("--isoforms", default = False, action="store_true", help="Search for offtargets on the transcriptome.")
-    parser.add_argument("--filterGCmin", default=0, type=int, help="Minimum required GC percentage. Default is 0.")
-    parser.add_argument("--filterGCmax", default=100, type=int, help="Maximum allowed GC percentage. Default is 100.")
-    parser.add_argument("--filterSelfCompMax", default=-1, type=int, help="Maximum acceptable Self-complementarity score. Default is -1, no filter.")
-    parser.add_argument("-cU", "--consensusUnion", default=False, action="store_true", help="When calculating consensus sequence from multiple isoforms default uses intersection. This option specifies union of isoforms.")
+    parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
+    parser.add_argument("-rm1perfOff", "--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
+    parser.add_argument("-isoforms", "--isoforms", default = False, action="store_true", help="Search for offtargets on the transcriptome.")
+    parser.add_argument("-filterGCmin", "--filterGCmin", default=0, type=int, help="Minimum required GC percentage. Default is 0.")
+    parser.add_argument("-filterGCmax", "--filterGCmax", default=100, type=int, help="Maximum allowed GC percentage. Default is 100.")
+    parser.add_argument("-filterSelfCompMax", "--filterSelfCompMax", default=-1, type=int, help="Maximum acceptable Self-complementarity score. Default is -1, no filter.")
+    parser.add_argument("-consensusUnion", "--consensusUnion", default=False, action="store_true", help="When calculating consensus sequence from multiple isoforms default uses intersection. This option specifies union of isoforms.")
     args = parser.parse_args()
 
     # set isoforms to global as it is influencing many steps
