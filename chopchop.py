@@ -2264,6 +2264,7 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
             txInfo = geneToCoord_db(target_string, genome, data)
         else:
             txInfo = geneToCoord_file(target_string, data)
+            gene, isoform, gene_isoforms = geneIsoforms(target_string, data)
 
         target_chr = set([x[0] for x in txInfo])
         target_strand = set([x[6] for x in txInfo])
@@ -2573,7 +2574,7 @@ def mode_select(var, index, MODE):
 def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("targets", help="Target genes or regions", metavar="TARGET_REGIONS")
+    parser.add_argument("-Target", "--targets", type=str, help="Target genes or regions", required=True)
     parser.add_argument("-r", "--gRVD", default="NH ", dest="g_RVD", action="store_const", const="NN ",  help="Use RVD 'NN' instead of 'NH' for guanine nucleotides. 'NH' appears to be more specific than 'NN' but the choice depends on assembly kit.")
     parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")
     parser.add_argument("-e", "--exon", help="Comma separated list of exon indices. Only find sites in this subset. ", metavar="EXON_NUMBER", dest="exons")
@@ -2582,7 +2583,7 @@ def main():
     parser.add_argument("-g", "--guideSize", default=None, type=int, metavar="GUIDE_SIZE", help="The size of the guide RNA.")
     parser.add_argument("-c", "--scoreGC", default=None, action="store_false", help="Score GC content. True for CRISPR, False for TALENs.")
     parser.add_argument("-SC", "--noScoreSelfComp", default=None, action="store_false", help="Do not penalize self-complementarity of CRISPR.")
-    parser.add_argument("-BB", "--backbone", default=None, metavar="BACKBONE", help="Penalize self-complementarity versus backbone regions (comma-separated list, same strand as guide). Requires -C.")
+    parser.add_argument("-BB", "--backbone", default=None, type=str, help="Penalize self-complementarity versus backbone regions (comma-separated list, same strand as guide). Requires -C.")
     parser.add_argument("-R5", "--replace5P", default=None, metavar="REPLACE_5P", help="Replace bases from 5' end (with e.g. 'GG') ")  ## FIX: AT THE MOMENT THIS IS ONLY APPLIES TO FOLDING/SELF-COMPL
     parser.add_argument("-t", "--target", default="CODING", dest="targetRegion", help="Target the whole gene CODING/WHOLE/UTR5/UTR3/SPLICE. Default is CODING.")
     parser.add_argument("-T", "--MODE", default=1, type=int, choices=[1, 2, 3, 4], help="Set mode (int): default is Cas9 = 1, Talen = 2, Cpf1 = 3, Nickase = 4")
@@ -2591,7 +2592,7 @@ def main():
     parser.add_argument("-nickaseMin", "--nickaseMin", default=10, type=int, help="Minimum distance between TALENs. Default is 10.")
     parser.add_argument("-nickaseMax", "--nickaseMax", default=31, type=int, help="Maximum distance between TALENs. Default is 31.")
     parser.add_argument("-offtargetMaxDist", "--offtargetMaxDist", default=100, type=int, help="Maximum distance between offtargets for Nickase. Default is 100.")
-    parser.add_argument("-f", "--fivePrimeEnd", default="NN", metavar="FIVE_PRIME_END", help="Specifies the requirement of the two nucleotides 5' end of the CRISPR guide: A/C/G/T/N. Default: NN.")
+    parser.add_argument("-f", "--fivePrimeEnd", default="NN", type=str, help="Specifies the requirement of the two nucleotides 5' end of the CRISPR guide: A/C/G/T/N. Default: NN.")
     parser.add_argument("-n", "--enzymeCo", default="N", metavar="ENZYME_CO", help="The restriction enzyme company for TALEN spacer.")
     parser.add_argument("-R", "--minResSiteLen", type=int, default=4, help="The minimum length of the restriction enzyme.")
     parser.add_argument("-v", "--maxMismatches", default=3, type=int, choices=[0, 1, 2, 3], metavar="MAX_MISMATCHES", help="The number of mismatches to check across the sequence.")
@@ -2601,7 +2602,7 @@ def main():
     parser.add_argument("-F", "--fasta", default=False, action="store_true", help="Use FASTA file as input rather than gene or genomic region.")
     parser.add_argument("-p", "--padSize", default=-1, type=int, help="Extra bases searched outside the exon. Defaults to the size of the guide RNA for CRISPR and TALEN + maximum spacer for TALENS.")
     parser.add_argument("-P", "--makePrimers", default=False, action="store_true", help="Designes primers using Primer3 to detect mutation.")
-    parser.add_argument("-3", "--primer3options", default=None, help="Options for Primer3. E.g. 'KEY1=VALUE1;KEY2=VALUE2'")
+    parser.add_argument("-3", "--primer3options", default=None, help="Options for Primer3. E.g. 'KEY1=VALUE1,KEY2=VALUE2'")
     parser.add_argument("-A", "--primerFlanks", default=300, type=int, help="Size of flanking regions to search for primers.")
     parser.add_argument("-a", "--guidePadding", default=20, type=int, help="Minimum distance of primer to target site.")
     parser.add_argument("-O", "--limitPrintResults", default=1000, dest="limitPrintResults", help="The number of results to print extended information for. Default 1000.")
