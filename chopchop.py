@@ -572,9 +572,9 @@ class Cas9(Guide):
 
     def calcSelfComplementarity(self, scoreSelfComp, backbone_regions, PAM, replace5prime = None):
         if replace5prime:
-            fwd = replace5prime + self.strandedGuideSeq[len(replace5prime):-len(PAM)] # Replace the 2 first bases with e.g. "GG"
+            fwd = replace5prime + self.strandedGuideSeq[len(replace5prime):(None if PAM == "" else -len(PAM))] # Replace the 2 first bases with e.g. "GG"
         else:
-            fwd = self.guideSeq[0:-len(PAM)] # Do not include PAM motif in folding calculations
+            fwd = self.guideSeq[0:(None if PAM == "" else -len(PAM))] # Do not include PAM motif in folding calculations
 
         rvs = str(Seq(fwd).reverse_complement())
         L = len(fwd)-STEM_LEN-1
@@ -592,7 +592,7 @@ class Cas9(Guide):
     def calcGCContent(self, scoreGC):
         """ Calculate the GC content of the guide """
         if self.PAM is not None and self.strandedGuideSeq is not None:
-            gSeq = self.strandedGuideSeq[0:-len(self.PAM)]
+            gSeq = self.strandedGuideSeq[0:(None if self.PAM == "" else -len(self.PAM))]
             Gcount = gSeq.count('G')
             Ccount = gSeq.count('C')
             self.GCcontent = (100*(float(Gcount+Ccount)/int(len(gSeq))))
@@ -1730,6 +1730,7 @@ codes = {
 
 def permPAM(PAM):
     PAM = PAM.upper()
+    new_comb = [""] # in case no PAM
     for i in range(len(PAM) - 1):
         if i == 0:
             comb = codes[PAM[0]]
@@ -1875,15 +1876,15 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
                 break
 
         if add and (filterGCmin != 0 or filterGCmax != 100):
-            gc = GC(dna[0:-len(PAM)]) #FIX EVERYWHERE GC content does not assumes 5' replacement
+            gc = GC(dna[0:(None if PAM == "" else -len(PAM))]) #FIX EVERYWHERE GC content does not assumes 5' replacement
             if gc < filterGCmin or gc > filterGCmax:
                 add = False
 
         if add and filterSelfCompMax != -1:
             if replace5prime:
-                fwd = replace5prime + dna[len(replace5prime):-len(PAM)]
+                fwd = replace5prime + dna[len(replace5prime):(None if PAM == "" else -len(PAM))]
             else:
-                fwd = dna[0:-len(PAM)]
+                fwd = dna[0:(None if PAM == "" else -len(PAM))]
             folding = selfComp(fwd, backbone)
             if folding > filterSelfCompMax:
                 add = False
