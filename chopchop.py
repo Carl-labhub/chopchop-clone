@@ -1101,42 +1101,22 @@ def geneToCoord_file(gene_in, table_file):
     tablereader = csv.DictReader(table_r, delimiter='\t', quoting=csv.QUOTE_NONE)
 
     tx_info = []
+    gene = None
     # Look in genome table for gene of question
     for row in tablereader:
-        if row['name'] == gene_in or row['name2'] == gene_in:
+        if row['name'] == gene_in or row['name2'] == gene_in or row['name'] == gene_in.upper() \
+                or row['name2'] == gene_in.upper():
             tx_info.append([row['chrom'], row['exonStarts'], row['exonEnds'], row['name'],
                            row['cdsStart'], row['cdsEnd'], row['strand'],
                            row['txStart'], row['txEnd']])
+            gene = row['name2']
     table_r.close()
 
     if len(tx_info) == 0:
         sys.stderr.write("The gene name %s does not exist in file %s. Please try again.\n" % (gene_in, table_file))
         sys.exit(EXIT['GENE_ERROR'])
 
-    return tx_info
-
-
-def geneIsoforms(isoform, tableFile):
-
-    tableR = open(tableFile, 'rb')
-    tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
-    gene_isoforms = set()
-    gene = None
-
-    for row in tablereader:
-        if row['name'] == isoform:
-            gene = row['name2']
-            break
-
-    tableR.close()
-    tableR = open(tableFile, 'rb')
-    tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
-    for row in tablereader:
-        if row['name2'] == gene:
-            gene_isoforms.add(row['name'])
-    tableR.close()
-
-    return gene, isoform, gene_isoforms
+    return gene, tx_info
 
 
 def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, indexDir, genome, strand):
@@ -1180,7 +1160,7 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         name = "C:%s:%d-%d" % (chrom, start, finish)
 
         # Loop over exon sequence, write every g-mer into file in which g-mer ends in PAM in fasta format 
-        for num in range(0,len(dna)-(targetSize-1)):
+        for num in range(0, len(dna)-(targetSize-1)):
 
             if (num - DOWNSTREAM_NUC) > 0:
                 start5prim = num - DOWNSTREAM_NUC
@@ -2212,6 +2192,17 @@ def bins(x): # from ranges to bins
     return starts, ends
 
 
+def get_isoforms(gene, table_file):
+    gene_isoforms = set()
+    tableR = open(table_file, 'rb')
+    tablereader = csv.DictReader(tableR, delimiter='\t', quoting=csv.QUOTE_NONE)
+    for row in tablereader:
+        if row['name2'] == gene:
+            gene_isoforms.add(row['name'])
+    tableR.close()
+    return gene_isoforms
+
+
 def parseTargets(target_string, genome, use_db, data, pad_size, target_region, exon_subset, promoter_bp,
                  index_dir, output_dir, use_union, make_vis, guideLen):
     targets = []
@@ -2234,7 +2225,7 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
         for target in target_string.split(";"):
             m = pattern.match(target)
             if m:
-                if m.group(2) != None and chrom != m.group(2):
+                if m.group(2) is not None and chrom != m.group(2):
                     sys.stderr.write(
                         "Can't target regions on separate chromosomes (%s != %s).\n" % (chrom, m.group(2)))
                     sys.exit(EXIT['GENE_ERROR'])
@@ -2264,8 +2255,12 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                 sys.exit(EXIT['ISOFORMS_ERROR'])
             txInfo = geneToCoord_db(target_string, genome, data)
         else:
-            txInfo = geneToCoord_file(target_string, data)
-            gene, isoform, gene_isoforms = geneIsoforms(target_string, data)
+            gene, txInfo = geneToCoord_file(target_string, data)
+            isoform = "union" if use_union else "intersection"
+            gene_isoforms = set([str(x[3]) for x in txInfo])
+            if target_string in gene_isoforms:
+                isoform = target_string
+                gene_isoforms = get_isoforms(gene, data)
 
         target_chr = set([x[0] for x in txInfo])
         target_strand = set([x[6] for x in txInfo])
@@ -2409,6 +2404,9 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
 
         target_size = len(targets)
         starts, ends = bins(targets)
+        if target_size < guideLen:
+            sys.stderr.write("Search region is too small. You probably want to specify -t option as WHOLE")
+            sys.exit(EXIT['GENE_ERROR'])
 
         if ISOFORMS:
             targets = map(lambda x: "%s:%s-%s" % (target_chr, x[0], x[1]), zip(starts, ends))
