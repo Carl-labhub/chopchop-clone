@@ -2460,7 +2460,7 @@ def parseFastaTarget(fasta_file, candidate_fasta_file, target_size, eval_and_pri
                           candidate_fasta_file, downstream_5prim, downstream_3prim):
             sequences[id_name] = sequence
 
-    return sequences, [name], [{"exons": [seq_name, 1, len(sequence), 0, 20, "+"],
+    return sequences, [name], [{"exons": [[seq_name, 1, len(sequence), 0, 20, "+"]],
                                 "ATG": [], "name": seq_name}], sequence, "+"
 
 
