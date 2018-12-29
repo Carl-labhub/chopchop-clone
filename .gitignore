@@ -5,3 +5,4 @@
 .pydevproject
 featurization.pyc
 chopchop.pyc
+config_local.json
