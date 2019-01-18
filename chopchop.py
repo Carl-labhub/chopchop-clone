@@ -348,7 +348,7 @@ class Guide(object):
         self.guideSeq = guideSeq
 
         # Record which strand the guide is on
-        if self.flagSum == "16" or ISOFORMS: # due to reverse complementing before alignments
+        if self.flagSum == "16": # due to reverse complementing before alignments
             self.strandedGuideSeq = guideSeq
             if self.strand is None:
                 self.strand = '+'
@@ -1174,11 +1174,15 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
 
             downstream_5prim = dna[(start5prim):num]
             downstream_3prim = dna[(num + targetSize):end3prim]
-            if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)], num, fastaFile,
+            if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)],
+                                len(dna) - num - targetSize if ISOFORMS and strand == "-" else num, fastaFile,
                                 downstream_5prim, downstream_3prim):
                 sequences[name] = dna
 
     fastaFile.close()
+
+    if ISOFORMS and strand == "-":
+        fastaSeq = str(Seq(fastaSeq).reverse_complement())
 
     return sequences, fastaSeq
 
@@ -1220,23 +1224,23 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, scoreGC, scoreSelf
                 genome=None, gene=None, isoform=None, gene_isoforms=None):
     """ Parses bowtie hits and build list of guides"""
 
-    currGuide = None
-    guideList = []
+    curr_guide = None
+    guide_list = []
 
-    sam = pandas.read_csv(bowtieResultsFile, sep = '\t', names = list(range(14)),
-                          header = None, index_col = False)
-    samName = sam.iloc[:, 0].value_counts()
-    samName = samName >= maxOffTargets
-    if mode: # Cas9, Cpf1, Nickase and not ISOFORMS, TALEN
+    sam = pandas.read_csv(bowtieResultsFile, sep='\t', names=list(range(14)),
+                          header=None, index_col=False)
+    sam_name = sam.iloc[:, 0].value_counts()
+    sam_name = sam_name >= maxOffTargets
+    if mode: # Cas9, Cpf1, Nickase and not TALEN
         sam[14] = sam[0].str[-(len(PAM) + 1):]
         sam[0] = sam[0].str[:-(len(PAM) + 1)]
-        samName = sam.groupby(0).apply(lambda x, m = maxOffTargets: any(x.iloc[:, 14].value_counts() >= m))
-        sam = sam.drop([14], axis = 1)
+        sam_name = sam.groupby(0).apply(lambda x, m=maxOffTargets: any(x.iloc[:, 14].value_counts() >= m))
+        sam = sam.drop([14], axis=1)
 
         sam = sam.groupby([0, 1, 2, 3]).apply(# remove duplicates
-            lambda x: x.sort_values(by = 11).iloc[0])
-        sam = sam.sort_values(by = [0, 11, 1, 2, 3])
-        sam = sam.reset_index(drop = True)
+            lambda x: x.sort_values(by=11).iloc[0])
+        sam = sam.sort_values(by=[0, 11, 1, 2, 3])
+        sam = sam.reset_index(drop=True)
 
     for idx, row in sam.iterrows():
         line = list(row)
@@ -1246,22 +1250,22 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, scoreGC, scoreSelf
         #  Encountered a new guide RNA (not a new hit for the same guide)
         elements = line[0].split(":") #removes from name 5' and 3' tails
         name = ":".join(elements[0:3])
-        isKmaxed = samName[line[0]]
+        is_kmaxed = sam_name[line[0]]
         line[0] = ":".join(elements[0:6])
         if len(elements) == 7 and line[1] == 16:
             elements[6] = str(Seq(elements[6]).reverse_complement())
-        if currGuide == None or name != currGuide.name:
-            currGuide = guideClass(line[0], line[1], len(line[9]),
+        if curr_guide is None or name != curr_guide.name:
+            curr_guide = guideClass(line[0], line[1], len(line[9]),
                                    elements[6] if len(elements) == 7 else line[9], scoreGC, scoreSelfComp,
                                    backbone, PAM, replace5prime, scoringMethod,
                                    genome, gene, isoform, gene_isoforms,
-                                   isKmaxed = isKmaxed)
-            guideList.append(currGuide)
+                                   isKmaxed=is_kmaxed)
+            guide_list.append(curr_guide)
 
         # Adds hit to off-target list of current guide.
-        currGuide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, countMM)
+        curr_guide.addOffTarget(Hit(line), checkMismatch, maxOffTargets, countMM)
 
-    return guideList
+    return guide_list
 
 
 def parse_primer3_output(target, region, primer3output, primerFastaFile):
@@ -1582,7 +1586,7 @@ PRIMER_EXPLAIN_FLAG=1
     return output[0]
 
 
-def writeIndividualResults (outputDir, maxOffTargets, sortedOutput, guideSize, mode, totalClusters, limitPrintResults):
+def writeIndividualResults(outputDir, maxOffTargets, sortedOutput, guideSize, mode, totalClusters, limitPrintResults):
     """ Writes each guide and its offtargets into a file """
 
     # Initiate list of lists for each cluster
@@ -1769,21 +1773,16 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
             add = False
 
     if add:
-        if ISOFORMS:
-            fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (
-                name, num, num+guideSize, downstream5prim, downstream3prim, dna))
-            return True
-        else:
-            dna = dna.reverse_complement()
-            pam_comb = permPAM(revCompPAM)
-            for p in pam_comb:
-                fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
-                                name, num, num+guideSize, downstream5prim, downstream3prim,
-                                dna, p, dna[:gLen] + p))
-            return True
+        dna = dna.reverse_complement()
+        pam_comb = permPAM(revCompPAM)
+        for p in pam_comb:
+            fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
+                            name, num, num+guideSize, downstream5prim, downstream3prim,
+                            dna, p, dna[:gLen] + p))
+        return True
 
 
-    add = True
+    add = True and not ISOFORMS
 
     for pos in range(len(PAM)):
         if comaprePAM(revCompPAM[pos], dna[gLen + pos]):
@@ -1806,7 +1805,7 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
         if folding > filterSelfCompMax:
             add = False
 
-    if add and not ISOFORMS:
+    if add:
         pam_comb = permPAM(revCompPAM)
         for p in pam_comb:
             #on the reverse strand seq of 5' downstream becomes 3' downstream and vice versa
@@ -1874,20 +1873,15 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
         # rather than end of the sequence
         # not in isoforms case as we don't search reverse complement
         if add:
-            if ISOFORMS:
-                fastaFile.write('>%s_%d-%d:%s:%s:+\n%s\n' % (
-                    name, num, num+guideSize, downstream5prim, downstream3prim, dna))
-                return True
-            else:
-                # all combinations of possible PAMs
-                dna = dna.reverse_complement()
-                pam_comb = permPAM(revCompPAM)
+            # all combinations of possible PAMs
+            dna = dna.reverse_complement()
+            pam_comb = permPAM(revCompPAM)
 
-                for p in pam_comb:
-                    fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
-                                    name, num, num+guideSize, downstream5prim, downstream3prim,
-                                    dna, p, p + dna[len(revCompPAM):]))
-                return True
+            for p in pam_comb:
+                fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
+                                name, num, num+guideSize, downstream5prim, downstream3prim,
+                                dna, p, p + dna[len(revCompPAM):]))
+            return True
 
     if str(dna[-2:].reverse_complement()) in allowed and not ISOFORMS:
         add = True
@@ -2374,6 +2368,12 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                 sys.stderr.write("Unknown region: %s\n" % target_region)
                 sys.exit(EXIT['PYTHON_ERROR'])
 
+            # filter exons that are too truncated
+            coords = [x for x in coords if x[1] < x[2]]
+            if not coords:
+                gene_isoforms.remove(tx[3])
+                del vis_coords[-1]
+
             # compute intersection/union on all exons
             if txInfo[0][3] == tx[3]:  # if this is first of the isoforms
                 for x in coords:
@@ -2385,8 +2385,7 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                     for x in coords:
                         targets_.extend(range(x[1], x[2] + 1))
 
-                    if len(targets_) >= guideLen:
-                        # cover cases where some transcripts provide short or none bp
+                    if len(targets_) >= guideLen: # cover cases where some transcripts provide short or none bp
                         targets &= set(targets_)
 
                     if len(targets) < guideLen:
@@ -2403,11 +2402,11 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                     targets |= set(targets_)
 
         target_size = len(targets)
-        starts, ends = bins(targets)
         if target_size < guideLen:
             sys.stderr.write("Search region is too small. You probably want to specify -t option as WHOLE")
             sys.exit(EXIT['GENE_ERROR'])
 
+        starts, ends = bins(targets)
         if ISOFORMS:
             targets = map(lambda x: "%s:%s-%s" % (target_chr, x[0], x[1]), zip(starts, ends))
         else:
@@ -2570,6 +2569,79 @@ def mode_select(var, index, MODE):
     sys.exit(EXIT['PYTHON_ERROR'])
 
 
+def print_bed(mode, vis_cords, targets, output_file, description): # bed is 0-based
+    bed_file = open(output_file, 'w')
+
+    if mode == CRISPR:
+        thresholds = [0, 1000]
+    elif mode == CPF1:
+        thresholds = [300, 1000]
+    elif mode == NICKASE:
+        thresholds = [3000, 6000]
+    else:
+        thresholds = [10000, 15000]
+
+    if targets is not None:
+
+        chromosome = vis_cords[0]["exons"][0][0]
+        min_loc = min([x["exons"][0][1] for x in vis_cords])
+        max_loc = max([x["exons"][-1][2] for x in vis_cords])
+
+        header = """track name=CHOPCHOP description=""" + description + """ visibility="pack" itemRgb="On"\n"""
+        bed_file.write("browser position {0}:{1}-{2}\n".format(chromosome, min_loc, max_loc))
+        bed_file.write(header)
+
+        for target in targets:
+
+            color = "0,128,0"  # green
+            if target[2] >= thresholds[0]:
+                color = "255,255,0"  # yellow
+            if target[2] >= thresholds[1]:
+                color = "255,0,0"  # red
+
+            if mode == CRISPR or mode == CPF1:
+                start = target[1] + -1 if target[4] == "+" else 0
+                stop = target[1] + target[3] + -1 if target[4] == "+" else 0
+            else:
+                start = target[6] + -1 if target[4] == "+" else 0
+                stop = target[7] + -1 if target[4] == "+" else 0
+
+            bed_line = "{0}\t{1}\t{2}\tRanked:{3}\t{4}\t{5}\t{1}\t{2}\t{6}\n".format(chromosome, start, stop,
+                                                                                     target[0], 0, target[4], color)
+            bed_file.write(bed_line)
+
+    bed_file.close()
+
+
+def print_genbank(mode, name, seq, exons, targets, chrom, seq_start, seq_end, strand, output_file, description): # different than other dump_gb
+    genbank_file = open(output_file, 'w')
+    loci = chrom + ":" + str(seq_start) + "-" + str(seq_end)
+    record = SeqRecord(Seq(seq, IUPACAmbiguousDNA()), description=description,
+                       name=name, id=loci)
+    # genbank is 0-based
+    if len(targets) > 0:
+        for target in targets:
+            ts = 1 if target[4] == "+" else -1
+            if mode == CRISPR or mode == CPF1:
+                start = target[1] + -1 if target[4] == "+" else 0
+                stop = target[1] + target[3] + -1 if target[4] == "+" else 0
+            else:
+                start = target[6] + -1 if target[4] == "+" else 0
+                stop = target[7] + -1 if target[4] == "+" else 0
+
+            record.features.append(SeqFeature(FeatureLocation(start-seq_start, stop-seq_start,
+                                                              strand=ts), type="Target_%s" % target[0]))
+
+    if len(exons) > 0:
+        gene_strand = 1 if strand == "+" else -1
+        for exon in exons:
+            record.features.append(SeqFeature(FeatureLocation(exon[1]-seq_start, exon[2]-seq_start,
+                                                              strand=gene_strand), type="gene_loci"))
+
+    SeqIO.write(record, genbank_file, "genbank")
+    genbank_file.close()
+
+
 def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
@@ -2607,13 +2679,15 @@ def main():
     parser.add_argument("-O", "--limitPrintResults", default=1000, dest="limitPrintResults", help="The number of results to print extended information for. Default 1000.")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
-    parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type = str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
+    parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type=str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
     parser.add_argument("-rm1perfOff", "--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
     parser.add_argument("-isoforms", "--isoforms", default = False, action="store_true", help="Search for offtargets on the transcriptome.")
     parser.add_argument("-filterGCmin", "--filterGCmin", default=0, type=int, help="Minimum required GC percentage. Default is 0.")
     parser.add_argument("-filterGCmax", "--filterGCmax", default=100, type=int, help="Maximum allowed GC percentage. Default is 100.")
     parser.add_argument("-filterSelfCompMax", "--filterSelfCompMax", default=-1, type=int, help="Maximum acceptable Self-complementarity score. Default is -1, no filter.")
     parser.add_argument("-consensusUnion", "--consensusUnion", default=False, action="store_true", help="When calculating consensus sequence from multiple isoforms default uses intersection. This option specifies union of isoforms.")
+    parser.add_argument("-BED", "--BED", default=False, action="store_true", help="Create results as BED file, can be used for integration with UCSC.")
+    parser.add_argument("-GenBank", "--GenBank", default=False, action="store_true", help="Create results as GenBank file, sequence of targeted region with introns is included.")
     args = parser.parse_args()
 
     # set isoforms to global as it is influencing many steps
@@ -2728,7 +2802,7 @@ def main():
                                   args.genome, int(args.maxMismatches))
     results = parseBowtie(guideClass, bowtieResultsFile, True, args.scoreGC, args.scoreSelfComp,
                           args.backbone, args.replace5P, args.maxOffTargets, countMM, args.PAM,
-                          args.MODE != TALENS and not ISOFORMS,
+                          args.MODE != TALENS,
                           args.scoringMethod, args.genome, gene, isoform, gene_isoforms)  # TALENS: MAKE_PAIRS + CLUSTER
 
     if args.rm1perfOff and args.fasta:
@@ -2878,7 +2952,6 @@ def main():
                 print "%s\t%s\t%s" % (i+1,sortedFinalOutput[i], sortedFinalOutput[i].ID)
 
     # Print gene annotation files
-
     # FASTA file
     geneFile = open('%s/gene_file.fa' % args.outputDir, 'w')
     geneFile.write(">%s\n" % args.targets)
@@ -2934,6 +3007,45 @@ def main():
         info.write("%s\t%s\t%s\t%s\t%s\n" % ("".join(args.targets), args.genome, args.MODE, args.uniqueMethod_Cong,
                                              args.guideSize))
         info.close()
+
+        if args.BED and not args.fasta:
+            print_bed(args.MODE, visCoords, cutcoords, '%s/results.bed' % args.outputDir, args.targets)
+
+        if args.GenBank:
+            if args.fasta:
+                seq = fastaSequence
+            else:
+                # targets min-max (with introns)
+                regions = targets
+                chrom = regions[0][0:regions[0].rfind(':')]
+                start = []
+                finish = []
+                targets = []
+                for region in regions:
+                    start_r = int(region[region.rfind(':') + 1:region.rfind('-')])
+                    start_r = max(start_r, 0)
+                    start.append(start_r)
+                    finish_r = int(region[region.rfind('-') + 1:])
+                    finish.append(finish_r)
+                    targets.append([chrom, start_r, finish_r])
+                start = min(start)
+                finish = max(finish)
+
+                prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (
+                    CONFIG["PATH"]["TWOBITTOFA"], chrom, start, finish, CONFIG["PATH"]["TWOBIT_INDEX_DIR"],
+                    args.genome, args.outputDir), stdout=PIPE, shell=True)
+                output = prog.communicate()
+                if prog.returncode != 0:
+                    sys.stderr.write("Running twoBitToFa failed when creating GenBank file\n")
+                    sys.exit(EXIT['TWOBITTOFA_ERROR'])
+
+                output = output[0]
+                output = output.split("\n")
+                seq = ''.join(output[1:]).upper()
+
+            print_genbank(args.MODE, args.targets, seq, targets, cutcoords, chrom, start, finish, strand,
+                          '%s/results.gb' % args.outputDir, "CHOPCHOP results")
+
 
 if __name__ == '__main__':
     main()
