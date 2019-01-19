@@ -2600,11 +2600,11 @@ def print_bed(mode, vis_cords, targets, output_file, description): # bed is 0-ba
                 color = "255,0,0"  # red
 
             if mode == CRISPR or mode == CPF1:
-                start = target[1] + -1 if target[4] == "+" else 0
-                stop = target[1] + target[3] + -1 if target[4] == "+" else 0
+                start = target[1] - 1
+                stop = target[1] + target[3] - 1
             else:
-                start = target[6] + -1 if target[4] == "+" else 0
-                stop = target[7] + -1 if target[4] == "+" else 0
+                start = target[6] - 1
+                stop = target[7] - 1
 
             bed_line = "{0}\t{1}\t{2}\tRanked:{3}\t{4}\t{5}\t{1}\t{2}\t{6}\n".format(chromosome, start, stop,
                                                                                      target[0], 0, target[4], color)
@@ -2618,22 +2618,25 @@ def print_genbank(mode, name, seq, exons, targets, chrom, seq_start, seq_end, st
     loci = chrom + ":" + str(seq_start) + "-" + str(seq_end)
     record = SeqRecord(Seq(seq, IUPACAmbiguousDNA()), description=description,
                        name=name, id=loci)
+    gene_strand = 1 if strand == "+" else -1
     # genbank is 0-based
     if len(targets) > 0:
         for target in targets:
             ts = 1 if target[4] == "+" else -1
+            if ISOFORMS:
+                ts = gene_strand
+
             if mode == CRISPR or mode == CPF1:
-                start = target[1] + -1 if target[4] == "+" else 0
-                stop = target[1] + target[3] + -1 if target[4] == "+" else 0
+                start = target[1] - 1
+                stop = target[1] + target[3] - 1
             else:
-                start = target[6] + -1 if target[4] == "+" else 0
-                stop = target[7] + -1 if target[4] == "+" else 0
+                start = target[6] - 1
+                stop = target[7] - 1
 
             record.features.append(SeqFeature(FeatureLocation(start-seq_start, stop-seq_start,
                                                               strand=ts), type="Target_%s" % target[0]))
 
     if len(exons) > 0:
-        gene_strand = 1 if strand == "+" else -1
         for exon in exons:
             record.features.append(SeqFeature(FeatureLocation(exon[1]-seq_start, exon[2]-seq_start,
                                                               strand=gene_strand), type="gene_loci"))
