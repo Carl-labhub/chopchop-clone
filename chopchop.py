@@ -3011,12 +3011,16 @@ def main():
                                              args.guideSize))
         info.close()
 
-        if args.BED and not args.fasta:
-            print_bed(args.MODE, visCoords, cutcoords, '%s/results.bed' % args.outputDir, args.targets)
+        if args.BED:
+            print_bed(args.MODE, visCoords, cutcoords, '%s/results.bed' % args.outputDir,
+                      visCoords[0]["name"] if args.fasta else args.targets)
 
         if args.GenBank:
             if args.fasta:
                 seq = fastaSequence
+                chrom = visCoords[0]["name"]
+                start = 0
+                finish = len(fastaSequence)
             else:
                 # targets min-max (with introns)
                 regions = targets
@@ -3046,8 +3050,9 @@ def main():
                 output = output.split("\n")
                 seq = ''.join(output[1:]).upper()
 
-            print_genbank(args.MODE, args.targets, seq, targets, cutcoords, chrom, start, finish, strand,
-                          '%s/results.gb' % args.outputDir, "CHOPCHOP results")
+            print_genbank(args.MODE, chrom if args.fasta else args.targets, seq,
+                          [] if args.fasta else targets, cutcoords, chrom, start, finish,
+                          strand, '%s/results.gb' % args.outputDir, "CHOPCHOP results")
 
 
 if __name__ == '__main__':
