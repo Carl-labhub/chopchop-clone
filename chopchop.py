@@ -1715,6 +1715,9 @@ codes = {
 def permPAM(PAM):
     PAM = PAM.upper()
     new_comb = [""] # in case no PAM
+    if len(PAM) == 1:
+        new_comb = codes[PAM]
+
     for i in range(len(PAM) - 1):
         if i == 0:
             comb = codes[PAM[0]]
