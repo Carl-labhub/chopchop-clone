@@ -17,6 +17,7 @@ import pandas
 import numpy
 import featurization as feat
 import scipy.stats as ss
+import warnings
 
 from collections import defaultdict
 from Bio import SeqIO
@@ -2644,7 +2645,9 @@ def print_genbank(mode, name, seq, exons, targets, chrom, seq_start, seq_end, st
             record.features.append(SeqFeature(FeatureLocation(exon[1]-seq_start, exon[2]-seq_start,
                                                               strand=gene_strand), type="gene_loci"))
 
-    SeqIO.write(record, genbank_file, "genbank")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        SeqIO.write(record, genbank_file, "genbank")
     genbank_file.close()
 
 
