@@ -349,7 +349,7 @@ class Guide(object):
         self.guideSeq = guideSeq
 
         # Record which strand the guide is on
-        if self.flagSum == "16": # due to reverse complementing before alignments
+        if self.flagSum == "16" or ISOFORMS: # due to reverse complementing before alignments
             self.strandedGuideSeq = guideSeq
             if self.strand is None:
                 self.strand = '+'
@@ -1777,12 +1777,19 @@ def eval_CPF1_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, do
             add = False
 
     if add:
-        dna = dna.reverse_complement()
-        pam_comb = permPAM(revCompPAM)
-        for p in pam_comb:
-            fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
-                            name, num, num+guideSize, downstream5prim, downstream3prim,
-                            dna, p, dna[:gLen] + p))
+        if ISOFORMS:
+            pam_comb = permPAM(PAM)
+            for p in pam_comb:
+                fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
+                    name, num, num + guideSize, downstream5prim, downstream3prim,
+                    dna, p, p + dna[len(PAM):]))
+        else:
+            dna = dna.reverse_complement()
+            pam_comb = permPAM(revCompPAM)
+            for p in pam_comb:
+                fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
+                                name, num, num+guideSize, downstream5prim, downstream3prim,
+                                dna, p, dna[:gLen] + p))
         return True
 
 
@@ -1877,15 +1884,22 @@ def eval_CRISPR_sequence(name, guideSize, dna, num, fastaFile, downstream5prim, 
         # rather than end of the sequence
         # not in isoforms case as we don't search reverse complement
         if add:
-            # all combinations of possible PAMs
-            dna = dna.reverse_complement()
-            pam_comb = permPAM(revCompPAM)
-
-            for p in pam_comb:
-                fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
-                                name, num, num+guideSize, downstream5prim, downstream3prim,
-                                dna, p, p + dna[len(revCompPAM):]))
-            return True
+            if ISOFORMS:
+                pam_comb = permPAM(PAM)
+                for p in pam_comb:
+                    fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
+                        name, num, num + guideSize, downstream5prim, downstream3prim,
+                        dna, p, dna[:gLen] + p))
+                return True
+            else:
+                # all combinations of possible PAMs
+                dna = dna.reverse_complement()
+                pam_comb = permPAM(revCompPAM)
+                for p in pam_comb:
+                    fastaFile.write('>%s_%d-%d:%s:%s:+:%s:%s\n%s\n' % (
+                                    name, num, num+guideSize, downstream5prim, downstream3prim,
+                                    dna, p, p + dna[len(revCompPAM):]))
+                return True
 
     if str(dna[-2:].reverse_complement()) in allowed and not ISOFORMS:
         add = True
@@ -2821,9 +2835,13 @@ def main():
 
     if ISOFORMS:
         for guide in results:
-            other_isoforms = guide.gene_isoforms.remove(guide.isoform) if guide.isoform in guide.gene_isoforms else guide.gene_isoforms
-            other_off_isoforms = guide.offTargetsIso[0].remove(guide.isoform) if guide.isoform in guide.offTargetsIso[0] else guide.offTargetsIso[0]
-            guide.conserved = int(other_isoforms == other_off_isoforms)
+            if guide.isoform in guide.gene_isoforms:
+                guide.gene_isoforms.remove(guide.isoform)
+
+            if guide.isoform in guide.offTargetsIso[0]:
+                guide.offTargetsIso[0].remove(guide.isoform)
+
+            guide.conserved = int(guide.gene_isoforms == guide.offTargetsIso[0])
 
     if (args.scoringMethod == "CHARI_2015" or args.scoringMethod == "ALL") and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10") and not ISOFORMS:
         try:
