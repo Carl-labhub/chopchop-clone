@@ -2634,6 +2634,10 @@ def print_bed(mode, vis_cords, targets, output_file, description): # bed is 0-ba
 def print_genbank(mode, name, seq, exons, targets, chrom, seq_start, seq_end, strand, output_file, description): # different than other dump_gb
     genbank_file = open(output_file, 'w')
     loci = chrom + ":" + str(seq_start) + "-" + str(seq_end)
+    if len(name) > 10: # almost always... Genbank seems a bit outdated as format
+        name = name[-10:]
+    if len(loci) > 10: # almost always...
+        loci = name[-10:]
     record = SeqRecord(Seq(seq, IUPACAmbiguousDNA()), description=description,
                        name=name, id=loci)
     gene_strand = 1 if strand == "+" else -1
