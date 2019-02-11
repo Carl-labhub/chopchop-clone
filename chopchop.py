@@ -2813,10 +2813,10 @@ def main():
     else:
         targets, visCoords, strand, gene, isoform, gene_isoforms = parseTargets(
             args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter,
-            CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.outputDir, args.consensusUnion, args.jsonVisualize, args.guideSize)
+            CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.outputDir, args.consensusUnion, args.jsonVisualize, args.guideSize)
         sequences, fastaSequence = coordToFasta(
             targets, candidate_fasta_file, args.outputDir, args.guideSize, evalSequence,
-            CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.genome, strand)
+            CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.genome, strand)
 
     ## Converts genomic coordinates to fasta file of all possible k-mers
     if len(sequences) == 0:
@@ -2935,7 +2935,7 @@ def main():
         if args.fasta:
             make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
         else:
-            make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], CONFIG["PATH"]["TWOBIT_INDEX_DIR"], args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
+            make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
 
 
     ## Print results
@@ -3067,7 +3067,7 @@ def main():
                 finish = max(finish)
 
                 prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (
-                    CONFIG["PATH"]["TWOBITTOFA"], chrom, start, finish, CONFIG["PATH"]["TWOBIT_INDEX_DIR"],
+                    CONFIG["PATH"]["TWOBITTOFA"], chrom, start, finish, CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"],
                     args.genome, args.outputDir), stdout=PIPE, shell=True)
                 output = prog.communicate()
                 if prog.returncode != 0:
