@@ -97,7 +97,7 @@ SCORE = {"INPAIR_OFFTARGET_0" : 5000,
          "OFFTARGET_PAIR_SAME_STRAND" : 10000,
          "OFFTARGET_PAIR_DIFF_STRAND" : 5000,
          "MAX_OFFTARGETS" : 20000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
-         "COEFFICIENTS" : 100,
+         "COEFFICIENTS" : 100, # also used for RNA folding in ISOFORM mode
          "CRISPR_BAD_GC" : 500,
          "FOLDING" : 1}
 
@@ -297,7 +297,7 @@ class Guide(object):
         self.isoform = isoform
         self.gene_isoforms = gene_isoforms
         self.offTargetsIso = {0: set(), 1: set(), 2: set(), 3: set()}
-        self.conserved = False # conservation of guide across all isoforms
+        self.constitutive = False # conservation of guide across all isoforms
         self.PAM = PAM
         # From the guide's name we can get the chromosome
         self.flagSum = str(flagSum)
@@ -322,6 +322,7 @@ class Guide(object):
         self.cluster = -1
         self.score = 0
         self.ALL_scores = [0, 0, 0, 0, 0, 0]
+        self.medianBPP = 0 # in ISOFORM mode median of base pair probabilities
 
         # Off target count
         self.offTargetsMM = [0] * 4
@@ -366,7 +367,7 @@ class Guide(object):
         if scoreSelfComp:
             self.calcSelfComplementarity(scoreSelfComp, backbone_regions, PAM, replace5prime)
         else:
-            self.folding ="N/A"
+            self.folding = "N/A"
 
         # Scoring
         self.calcGCContent(scoreGC)
@@ -492,13 +493,13 @@ class Guide(object):
     def __str__(self):
         self.sort_offTargets()
         if ISOFORMS:
-            return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq,
+            return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq,
                                                                                             self.chrom, self.start,
                                                                                             self.gene, self.isoform,
-                                                                                            self.GCcontent, self.folding,
+                                                                                            self.GCcontent, self.folding, self.medianBPP,
                                                                                             self.offTargetsMM[0], self.offTargetsMM[1],
                                                                                             self.offTargetsMM[2], self.offTargetsMM[3],
-                                                                                            self.conserved, (",").join(set(self.offTargetsIso[0])),
+                                                                                            self.constitutive, (",").join(set(self.offTargetsIso[0])),
                                                                                             (",").join(set(self.offTargetsIso[1])),
                                                                                             (",").join(set(self.offTargetsIso[2])),
                                                                                             (",").join(set(self.offTargetsIso[3])))
@@ -2669,6 +2670,46 @@ def print_genbank(mode, name, seq, exons, targets, chrom, seq_start, seq_end, st
     genbank_file.close()
 
 
+def median(lst):
+    sorted_lst = sorted(lst)
+    lst_len = len(lst)
+    index = (lst_len - 1) // 2
+
+    if lst_len % 2:
+        return sorted_lst[index]
+    else:
+        return (sorted_lst[index] + sorted_lst[index + 1])/2.0
+
+
+def rna_folding_metric(specie, tx_id, tx_start, tx_end):
+    median_bpp = 0
+    file_path = CONFIG["PATH"]["ISOFORMS_MT_DIR"] + "/" + specie + "/" + tx_id + ".mt"
+    if os.path.isfile(file_path):
+        mt = pandas.read_csv(file_path, sep="\t", header=None, skiprows=tx_start, nrows=tx_end - tx_start)
+        median_bpp = median(mt[1].tolist())
+
+    return median_bpp
+
+
+def tx_relative_coordinates(visCoords, tx_id, start, end):
+    tx_start, tx_end = -1, -1
+    exons = [e["exons"] for e in visCoords if e["name"] == tx_id][0]
+    e_id = -1
+    for i, e in enumerate(exons):
+        if e[1] <= (start - 1) and e[2] >= (end - 1):
+            e_id = i
+            break
+
+    if e_id is not -1:
+        for i in range(0, e_id) if exons[0][5] == "+" else range(e_id + 1, len(exons)):
+            tx_start += exons[i][2] - exons[i][1]
+
+        tx_start += (exons[e_id][1] - start - 1) if exons[0][5] == "+" else (exons[e_id][2] - end - 1)
+        tx_end = tx_start + end - start
+
+    return tx_start, tx_end
+
+
 def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
@@ -2835,17 +2876,33 @@ def main():
     if args.rm1perfOff and args.fasta:
         for guide in results:
             if guide.offTargetsMM[0] > 0:
-                guide.score = guide.score - SINGLE_OFFTARGET_SCORE[0]
+                guide.score -= SINGLE_OFFTARGET_SCORE[0]
 
     if ISOFORMS:
         for guide in results:
+            if guide.isoform in ["union", "intersection"]: # calculate base pair probabilities of folding
+                # iterate all isoforms
+                bpp = []
+                for tx_id in guide.gene_isoforms:
+                    tx_start, tx_end = tx_relative_coordinates(visCoords, tx_id, guide.start, guide.end)
+                    if tx_start is not -1:
+                        bpp.append(rna_folding_metric(args.genome, tx_id, tx_start, tx_end))
+                guide.medianBPP = 100 if len(bpp) == 0 else max(bpp) # penalize guide that has no real target!
+            else:
+                tx_start, tx_end = tx_relative_coordinates(visCoords, guide.isoform, guide.start, guide.end)
+                guide.medianBPP = rna_folding_metric(args.genome, guide.isoform, tx_start, tx_end)
+
+            guide.score += guide.medianBPP / 100 * SCORE['COEFFICIENTS']
+
             if guide.isoform in guide.gene_isoforms:
                 guide.gene_isoforms.remove(guide.isoform)
 
             if guide.isoform in guide.offTargetsIso[0]:
                 guide.offTargetsIso[0].remove(guide.isoform)
 
-            guide.conserved = int(guide.gene_isoforms == guide.offTargetsIso[0])
+            guide.constitutive = int(guide.gene_isoforms == guide.offTargetsIso[0])
+
+
 
     if (args.scoringMethod == "CHARI_2015" or args.scoringMethod == "ALL") and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10") and not ISOFORMS:
         try:
@@ -2867,7 +2924,7 @@ def main():
                 x = 0
                 tw = '-1'
                 # end index
-                if len(sequence)==27:
+                if len(sequence) == 27:
                     endIndex = 22
                 else:
                     endIndex = 21
@@ -2942,7 +2999,7 @@ def main():
     resultCoords = []
 
     if ISOFORMS:
-        print "Rank\tTarget sequence\tGenomic location\tGene\tIsoform\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3\tConserved\tIsoformsMM0\tIsoformsMM1\tIsoformsMM2\tIsoformsMM3"
+        print "Rank\tTarget sequence\tGenomic location\tGene\tIsoform\tGC content (%)\tSelf-complementarity\tMedian bp pair probability\tMM0\tMM1\tMM2\tMM3\tConstitutive\tIsoformsMM0\tIsoformsMM1\tIsoformsMM2\tIsoformsMM3"
         for i in range(len(sortedOutput)):
             print "%s\t%s" % (i+1, sortedOutput[i])
             resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
