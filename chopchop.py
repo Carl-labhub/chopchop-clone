@@ -606,6 +606,22 @@ class Cas9(Guide):
                 self.score += SCORE['CRISPR_BAD_GC']
 
 
+class Cpf1(Guide):
+    def __init__(self, *args, **kwargs):
+        super(Cpf1, self).__init__(*args, **kwargs)
+        self.CoefficientsScore = 0 # KIM_2018
+
+    def __str__(self):
+        self.sort_offTargets()
+        return "%s\t%s:%s\t%s\t%.0f\t%s\t%.0f\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq, self.chrom, self.start,
+                                                                  self.strand, self.GCcontent, self.folding,
+                                                                  self.CoefficientsScore,
+                                                                  self.offTargetsMM[0], self.offTargetsMM[1],
+                                                                  self.offTargetsMM[2],
+                                                                  ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else
+                                                                  self.offTargetsMM[3])
+
+
 class Pair:
     """ Pair class for 2 TALEs that are the correct distance apart """
     def __init__(self, tale1, tale2, spacerSeq, spacerSize, offTargetPairs, enzymeCo, maxOffTargets, g_RVD, minResSiteLen):
@@ -2747,7 +2763,7 @@ def main():
     parser.add_argument("-O", "--limitPrintResults", default=1000, dest="limitPrintResults", help="The number of results to print extended information for. Default 1000.")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
-    parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type=str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
+    parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type=str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "KIM_2018", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
     parser.add_argument("-rm1perfOff", "--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
     parser.add_argument("-isoforms", "--isoforms", default = False, action="store_true", help="Search for offtargets on the transcriptome.")
     parser.add_argument("-filterGCmin", "--filterGCmin", default=0, type=int, help="Minimum required GC percentage. Default is 0.")
@@ -2814,7 +2830,7 @@ def main():
             name, guideSize, dna, num, fastaFile, downstream5prim, downstream3prim, PAM=args.PAM,
             filterGCmin=args.filterGCmin, filterGCmax=args.filterGCmax,
             filterSelfCompMax=args.filterSelfCompMax, replace5prime=args.replace5P, backbone=args.backbone)
-        guideClass = Guide
+        guideClass = Cpf1 if not ISOFORMS else Guide
         sortOutput = sort_CRISPR_guides
     elif args.MODE == TALENS:
         (allowedMM, countMM) = getMismatchVectors(args.PAM, args.guideSize, None)
@@ -2947,6 +2963,71 @@ def main():
             pass
 
 
+    if (args.scoringMethod == "KIM_2018" or args.scoringMethod == "ALL") and args.PAM == "TTTN" and not ISOFORMS:
+        # noinspection PyBroadException
+        try:
+            os.environ['KERAS_BACKEND'] = 'theano'
+
+            from keras.models import Model
+            from keras.layers import Input
+            from keras.layers.merge import Multiply
+            from keras.layers.core import Dense, Dropout, Activation, Flatten
+            from keras.layers.convolutional import Convolution1D, AveragePooling1D
+
+            seq_deep_cpf1_input_seq = Input(shape=(34, 4))
+            seq_deep_cpf1_c1 = Convolution1D(80, 5, activation='relu')(seq_deep_cpf1_input_seq)
+            seq_deep_cpf1_p1 = AveragePooling1D(2)(seq_deep_cpf1_c1)
+            seq_deep_cpf1_f = Flatten()(seq_deep_cpf1_p1)
+            seq_deep_cpf1_do1 = Dropout(0.3)(seq_deep_cpf1_f)
+            seq_deep_cpf1_d1 = Dense(80, activation='relu')(seq_deep_cpf1_do1)
+            seq_deep_cpf1_do2 = Dropout(0.3)(seq_deep_cpf1_d1)
+            seq_deep_cpf1_d2 = Dense(40, activation='relu')(seq_deep_cpf1_do2)
+            seq_deep_cpf1_do3 = Dropout(0.3)(seq_deep_cpf1_d2)
+            seq_deep_cpf1_d3 = Dense(40, activation='relu')(seq_deep_cpf1_do3)
+            seq_deep_cpf1_do4 = Dropout(0.3)(seq_deep_cpf1_d3)
+            seq_deep_cpf1_output = Dense(1, activation='linear')(seq_deep_cpf1_do4)
+            seq_deep_cpf1 = Model(inputs=[seq_deep_cpf1_input_seq], outputs=[seq_deep_cpf1_output])
+            seq_deep_cpf1.load_weights('./models/Seq_deepCpf1_weights.h5')
+
+            # process data
+            data_n = len(results) - 1
+            one_hot = numpy.zeros((data_n, 34, 4), dtype=int)
+
+            for l in range(1, data_n + 1):
+                prim5 = results[l].downstream5prim[-4:]
+                if len(prim5) < 4: # cover weird genomic locations
+                    prim5 = "N" * (4 - len(prim5)) + prim5
+                guide_seq = results[l].strandedGuideSeq
+                prim3 = results[l].downstream3prim[:6]
+                if len(prim3) < 6:
+                    prim5 = "N" * (6 - len(prim5)) + prim5
+                seq = prim5 + guide_seq + prim3
+
+                for i in range(34):
+                    if seq[i] in "Aa":
+                        one_hot[l - 1, i, 0] = 1
+                    elif seq[i] in "Cc":
+                        one_hot[l - 1, i, 1] = 1
+                    elif seq[i] in "Gg":
+                        one_hot[l - 1, i, 2] = 1
+                    elif seq[i] in "Tt":
+                        one_hot[l - 1, i, 3] = 1
+                    elif seq[i] in "Nn": # N will activate all nodes
+                        one_hot[l - 1, i, 0] = 1
+                        one_hot[l - 1, i, 1] = 1
+                        one_hot[l - 1, i, 2] = 1
+                        one_hot[l - 1, i, 3] = 1
+
+            seq_deep_cpf1_score = seq_deep_cpf1.predict([one_hot], batch_size=50, verbose=0)
+
+            for i, guide in enumerate(results):
+                guide.CoefficientsScore = seq_deep_cpf1_score[i][0]
+                guide.score -= (guide.CoefficientsScore / 100) * SCORE['COEFFICIENTS']
+        except:
+            pass
+
+
+
     if args.MODE == CRISPR or args.MODE == CPF1 or ISOFORMS:
         cluster = 0
     elif args.MODE == TALENS:
@@ -3015,7 +3096,7 @@ def main():
                 resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
 
         elif args.MODE == CPF1:
-            print "Rank\tTarget sequence\tGenomic location\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
+            print "Rank\tTarget sequence\tGenomic location\tStrand\tGC content (%)\tSelf-complementarity\tEfficiency\tMM0\tMM1\tMM2\tMM3"
             for i in range(len(sortedOutput)):
                 print "%s\t%s" % (i+1, sortedOutput[i])
                 resultCoords.append([sortedOutput[i].start, sortedOutput[i].score, sortedOutput[i].guideSize, sortedOutput[i].strand])
