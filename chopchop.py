@@ -527,18 +527,17 @@ class Cas9(Guide):
                                   "CHARI_2015": 0,
                                   "G_20": 0}
 
-        if self.scoringMethod in ["DOENCH_2016", "ALL"]:
-            self.CoefficientsScore["DOENCH_2016"] = scoreDoench_2016(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim)
-            if self.scoringMethod == "DOENCH_2016":
-                self.score = self.score - self.CoefficientsScore["DOENCH_2016"] * SCORE['COEFFICIENTS']
-
         if self.scoringMethod not in ["CHARI_2015", "DOENCH_2016", "ALL"]:
-            self.CoefficientsScore[self.scoringMethod] = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[self.scoringMethod])
-            self.score = self.score - self.CoefficientsScore[self.scoringMethod] * SCORE['COEFFICIENTS']
+            self.CoefficientsScore[self.scoringMethod] = scoregRNA(
+                self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)],
+                self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[self.scoringMethod])
+            self.score -= self.CoefficientsScore[self.scoringMethod] * SCORE['COEFFICIENTS']
 
         if self.scoringMethod == "ALL":
             for met in ["XU_2015", "DOENCH_2014", "MORENO_MATEOS_2015", "G_20"]:
-                self.CoefficientsScore[met] = scoregRNA(self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)], self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[met])
+                self.CoefficientsScore[met] = scoregRNA(
+                    self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)],
+                    self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[met])
 
     def __str__(self):
         self.sort_offTargets()
@@ -944,28 +943,6 @@ def concatenate_feature_sets(feature_sets):
         feature_names.extend(feature_sets[fset].columns.tolist())
 
     return inputs, dim, dimsum, feature_names
-
-def scoreDoench_2016(seq, PAM, tail):
-    """ Calculate score from 27-NGG-3 model as in Doench 2016 """
-    if len(seq) < 24:
-        return 0
-
-    if len(PAM) < 3:
-        return 0
-
-    try:
-        with open('./models/Doench_2016_model_nopos.pickle', 'rb') as f:
-                model= pickle.load(f)
-
-        model, learn_options = model
-        learn_options["V"] = 2
-        Xdf = pandas.DataFrame(columns=[u'30mer', u'Strand'], data=[[''.join((seq[-24:], PAM, tail[:3])), 'NA']])
-        gene_position = pandas.DataFrame(columns=[u'Percent Peptide', u'Amino Acid Cut position'], data=[[-1, -1]])
-        feature_sets = feat.featurize_data(Xdf, learn_options, pandas.DataFrame(), gene_position)
-        inputs = concatenate_feature_sets(feature_sets)[0]
-        return model.predict(inputs)[0]
-    except:
-        return 0
 
 
 def gccontent(seq):
@@ -2958,7 +2935,7 @@ def main():
             for i, guide in enumerate(results):
                 guide.CoefficientsScore["CHARI_2015"] = newScores[i]
                 if args.scoringMethod == "CHARI_2015":
-                    guide.score = guide.score - (guide.CoefficientsScore["CHARI_2015"]/100) * SCORE['COEFFICIENTS']
+                    guide.score -= (guide.CoefficientsScore["CHARI_2015"] / 100) * SCORE['COEFFICIENTS']
         except:
             pass
 
@@ -3026,6 +3003,56 @@ def main():
         except:
             pass
 
+
+    if (args.scoringMethod == "DOENCH_2016" or args.scoringMethod == "ALL") and not ISOFORMS:
+        # noinspection PyBroadException
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                with open('./models/Doench_2016_18.01_model_nopos.pickle', 'rb') as f:
+                    model = pickle.load(f)
+
+            model, learn_options = model
+            learn_options["V"] = 2
+
+            results_ok = []
+            sequences_d2016 = []
+            for i, guide in enumerate(results):
+                seq_d2016 = guide.downstream5prim + guide.strandedGuideSeq[:-len(guide.PAM)]
+                pam_d2016 = guide.strandedGuideSeq[-len(guide.PAM):]
+                tail_d2016 = guide.downstream3prim
+                if len(seq_d2016) < 24 or len(pam_d2016) < 3 or len(tail_d2016) < 3:
+                    results_ok.append(False)
+                else:
+                    results_ok.append(True)
+                    dada = seq_d2016[-24:] + pam_d2016 + tail_d2016[:3]
+                    sequences_d2016.append(dada)
+
+
+            sequences_d2016 = numpy.array(sequences_d2016)
+            xdf = pandas.DataFrame(columns=[u'30mer', u'Strand'],
+                                   data=zip(sequences_d2016, numpy.repeat('NA', sequences_d2016.shape[0])))
+            gene_position = pandas.DataFrame(columns=[u'Percent Peptide', u'Amino Acid Cut position'],
+                                             data=zip(numpy.ones(sequences_d2016.shape[0]) * -1,
+                                                      numpy.ones(sequences_d2016.shape[0]) * -1))
+            feature_sets = feat.featurize_data(xdf, learn_options, pandas.DataFrame(), gene_position, pam_audit=True,
+                                               length_audit=False)
+            inputs = concatenate_feature_sets(feature_sets)[0]
+            outputs = model.predict(inputs)
+
+            j = 0
+            for i, guide in enumerate(results):
+                if results_ok[i]:
+                    if outputs[j] > 1:
+                        outputs[j] = 1
+                    elif outputs[j] < 0:
+                        outputs[j] = 0
+                    guide.CoefficientsScore["DOENCH_2016"] = outputs[j]
+                    j += 1
+                    if args.scoringMethod == "DOENCH_2016":
+                        guide.score -= (guide.CoefficientsScore["DOENCH_2016"] / 100) * SCORE['COEFFICIENTS']
+        except:
+            pass
 
 
     if args.MODE == CRISPR or args.MODE == CPF1 or ISOFORMS:
