@@ -90,6 +90,7 @@ PRIMER_OFF_TARGET_MAX = 1000
 MAX_IN_CLUSTER = 15
 
 # SCORES
+DOWNSTREAM_NUC = 60
 SCORE = {"INPAIR_OFFTARGET_0" : 5000,
          "INPAIR_OFFTARGET_1" : 3000,
          "INPAIR_OFFTARGET_2" : 2000,
@@ -184,9 +185,6 @@ MORENO_MATEOS_2015 = {"Intercept": 0.1839309436,
                       "3G":0.0307124897,
                       "5G":-0.0141671226,"5T":-0.0176476917,"5GA":-0.0377977074,"5AG":-0.0419359085,
                       "6A":0.0485962592}
-
-#n":umber of nucleotides counted towards scoring after PAM, end before 5' gRNA start eg. 3: 321 gRNA PAM 123
-DOWNSTREAM_NUC = 15
 
 # EXIT CODES
 EXIT = {"PYTHON_ERROR" : 1,
@@ -322,7 +320,7 @@ class Guide(object):
         self.cluster = -1
         self.score = 0
         self.ALL_scores = [0, 0, 0, 0, 0, 0]
-        self.medianBPP = 0 # in ISOFORM mode median of base pair probabilities
+        self.meanBPP = 0 # in ISOFORM mode median of base pair probabilities
 
         # Off target count
         self.offTargetsMM = [0] * 4
@@ -496,7 +494,7 @@ class Guide(object):
             return "%s\t%s:%s\t%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (self.strandedGuideSeq,
                                                                                             self.chrom, self.start,
                                                                                             self.gene, self.isoform,
-                                                                                            self.GCcontent, self.folding, self.medianBPP,
+                                                                                            self.GCcontent, self.folding, self.meanBPP,
                                                                                             self.offTargetsMM[0], self.offTargetsMM[1],
                                                                                             self.offTargetsMM[2], self.offTargetsMM[3],
                                                                                             self.constitutive, (",").join(set(self.offTargetsIso[0])),
@@ -526,6 +524,8 @@ class Cas9(Guide):
                                   "MORENO_MATEOS_2015": 0,
                                   "CHARI_2015": 0,
                                   "G_20": 0}
+        self.repProfile = None # Shen et al 2018 prediction of repair profile
+        self.repStats = None
 
         if self.scoringMethod not in ["CHARI_2015", "DOENCH_2016", "ALL"]:
             self.CoefficientsScore[self.scoringMethod] = scoregRNA(
@@ -1114,12 +1114,13 @@ def geneToCoord_file(gene_in, table_file):
     return gene, tx_info
 
 
-def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, indexDir, genome, strand):
+def coordToFasta(regions, fasta_file, outputDir, targetSize, evalAndPrintFunc, indexDir, genome, strand, ext):
     """ Extracts the sequence corresponding to genomic coordinates from a FASTA file """
 
+    ext = 0 if ISOFORMS else ext # for genomic context for some models
     sequences = {}
-    fastaFile = open(fastaFile, 'w')
-    fastaSeq = ""
+    fasta_file = open(fasta_file, 'w')
+    fasta_seq = ""
 
     if ISOFORMS and strand == "-":
         regions = regions[::-1]
@@ -1134,7 +1135,7 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         # Run twoBitToFa program to get actual dna sequence corresponding to input genomic coordinates
         # Popen runs twoBitToFa program. PIPE pipes stdout.
         prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (
-            CONFIG["PATH"]["TWOBITTOFA"], chrom, start, finish, indexDir, genome, outputDir), stdout=PIPE, shell=True)
+            CONFIG["PATH"]["TWOBITTOFA"], chrom, start - ext, finish + ext, indexDir, genome, outputDir), stdout=PIPE, shell=True)
 
         # Communicate converts stdout to a string
         output = prog.communicate()
@@ -1145,41 +1146,33 @@ def coordToFasta(regions, fastaFile, outputDir, targetSize, evalAndPrintFunc, in
         output = output[0]
         exons = output.split("\n")
         dna = ''.join(exons[1:]).upper()
+        ext_dna = dna
+        dna = dna[ext:(len(dna)-ext)]
         if ISOFORMS and strand == "-":
             dna = str(Seq(dna).reverse_complement())
 
         # Write exon sequences to text file user can open in ApE. exon-intron junctions in lowercase.
-        fastaSeq += dna[0].lower()+dna[1:-1]+dna[-1].lower()
+        fasta_seq += dna[0].lower()+dna[1:-1]+dna[-1].lower()
 
         # Add 1 due to BED 0-indexing
         name = "C:%s:%d-%d" % (chrom, start, finish)
 
         # Loop over exon sequence, write every g-mer into file in which g-mer ends in PAM in fasta format 
         for num in range(0, len(dna)-(targetSize-1)):
-
-            if (num - DOWNSTREAM_NUC) > 0:
-                start5prim = num - DOWNSTREAM_NUC
-            else:
-                start5prim = 0
-
-            if (num + targetSize + DOWNSTREAM_NUC) > len(dna):
-                end3prim = len(dna)
-            else:
-                end3prim = num + targetSize + DOWNSTREAM_NUC
-
-            downstream_5prim = dna[(start5prim):num]
-            downstream_3prim = dna[(num + targetSize):end3prim]
+            downstream_5prim = ext_dna[num:(num + ext)]
+            g_end = num + ext + targetSize
+            downstream_3prim = ext_dna[g_end:(g_end + ext)]
             if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)],
-                                len(dna) - num - targetSize if ISOFORMS and strand == "-" else num, fastaFile,
+                                len(dna) - num - targetSize if ISOFORMS and strand == "-" else num, fasta_file,
                                 downstream_5prim, downstream_3prim):
                 sequences[name] = dna
 
-    fastaFile.close()
+    fasta_file.close()
 
     if ISOFORMS and strand == "-":
-        fastaSeq = str(Seq(fastaSeq).reverse_complement())
+        fasta_seq = str(Seq(fasta_seq).reverse_complement())
 
-    return sequences, fastaSeq
+    return sequences, fasta_seq
 
 
 def runBowtie(PAMlength, unique_method_cong, fasta_file, output_dir,
@@ -1590,14 +1583,14 @@ def writeIndividualResults(outputDir, maxOffTargets, sortedOutput, guideSize, mo
     fileHandler = dict()
 
     # Limit the number of open files (and results) 
-    sortedOutput = sortedOutput[0:min(len(sortedOutput),limitPrintResults-1)]
+    sortedOutput = sortedOutput[0:min(len(sortedOutput), limitPrintResults-1)]
 
     for i in range(len(sortedOutput)):
         current = sortedOutput[i]
         current.ID = i+1
 
         # Create new file if not already opened
-        if not current.ID in fileHandler:
+        if current.ID not in fileHandler:
             resultsFile = '%s/%s.offtargets' % (outputDir, current.ID)
             fileHandler[current.ID] = open(resultsFile, 'w')
         f = fileHandler[current.ID]
@@ -1612,6 +1605,15 @@ def writeIndividualResults(outputDir, maxOffTargets, sortedOutput, guideSize, mo
             offTargets = "There are no predicted off-targets."
 
         f.write(str(current.strandedGuideSeq)+"\n"+offTargets+"\n")
+
+        if current.repStats is not None:
+            stats_file = '%s/%s_repStats.json' % (outputDir, current.ID)
+            with open(stats_file, 'w') as fp:
+                json.dump(current.repStats, fp)
+
+        if current.repProfile is not None:
+            profile_file = '%s/%s_repProfile.csv' % (outputDir, current.ID)
+            current.repProfile.to_csv(profile_file, index=False)
 
     for clust in clusters:
         if len(clust) == 0:
@@ -2663,25 +2665,14 @@ def print_genbank(mode, name, seq, exons, targets, chrom, seq_start, seq_end, st
     genbank_file.close()
 
 
-def median(lst):
-    sorted_lst = sorted(lst)
-    lst_len = len(lst)
-    index = (lst_len - 1) // 2
-
-    if lst_len % 2:
-        return sorted_lst[index]
-    else:
-        return (sorted_lst[index] + sorted_lst[index + 1])/2.0
-
-
 def rna_folding_metric(specie, tx_id, tx_start, tx_end):
-    median_bpp = 0
+    mean_bpp = 0
     file_path = CONFIG["PATH"]["ISOFORMS_MT_DIR"] + "/" + specie + "/" + tx_id + ".mt"
     if os.path.isfile(file_path):
         mt = pandas.read_csv(file_path, sep="\t", header=None, skiprows=tx_start, nrows=tx_end - tx_start)
-        median_bpp = median(mt[1].tolist())
+        mean_bpp = numpy.mean(mt[1].tolist())
 
-    return median_bpp
+    return mean_bpp
 
 
 def tx_relative_coordinates(visCoords, tx_id, start, end):
@@ -2741,6 +2732,8 @@ def main():
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
     parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type=str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "KIM_2018", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
+    parser.add_argument("-repairPredictions", "--repairPredictions", default=None, type=str,
+                        choices=['mESC', 'U2OS', 'HEK293', 'HCT116', 'K562'], help="Use inDelphi from Shen et al 2018 to predict repair profiles for every guideRNA, this will make .repProfile and .repStats files")
     parser.add_argument("-rm1perfOff", "--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
     parser.add_argument("-isoforms", "--isoforms", default = False, action="store_true", help="Search for offtargets on the transcriptome.")
     parser.add_argument("-filterGCmin", "--filterGCmin", default=0, type=int, help="Minimum required GC percentage. Default is 0.")
@@ -2850,7 +2843,8 @@ def main():
             CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.outputDir, args.consensusUnion, args.jsonVisualize, args.guideSize)
         sequences, fastaSequence = coordToFasta(
             targets, candidate_fasta_file, args.outputDir, args.guideSize, evalSequence,
-            CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.genome, strand)
+            CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.genome,
+            strand, DOWNSTREAM_NUC)
 
     ## Converts genomic coordinates to fasta file of all possible k-mers
     if len(sequences) == 0:
@@ -2880,12 +2874,12 @@ def main():
                     tx_start, tx_end = tx_relative_coordinates(visCoords, tx_id, guide.start, guide.end)
                     if tx_start is not -1:
                         bpp.append(rna_folding_metric(args.genome, tx_id, tx_start, tx_end))
-                guide.medianBPP = 100 if len(bpp) == 0 else max(bpp) # penalize guide that has no real target!
+                guide.meanBPP = 100 if len(bpp) == 0 else max(bpp) # penalize guide that has no real target!
             else:
                 tx_start, tx_end = tx_relative_coordinates(visCoords, guide.isoform, guide.start, guide.end)
-                guide.medianBPP = rna_folding_metric(args.genome, guide.isoform, tx_start, tx_end)
+                guide.meanBPP = rna_folding_metric(args.genome, guide.isoform, tx_start, tx_end)
 
-            guide.score += guide.medianBPP / 100 * SCORE['COEFFICIENTS']
+            guide.score += guide.meanBPP / 100 * SCORE['COEFFICIENTS']
 
             if guide.isoform in guide.gene_isoforms:
                 guide.gene_isoforms.remove(guide.isoform)
@@ -2894,7 +2888,6 @@ def main():
                 guide.offTargetsIso[0].remove(guide.isoform)
 
             guide.constitutive = int(guide.gene_isoforms == guide.offTargetsIso[0])
-
 
 
     if (args.scoringMethod == "CHARI_2015" or args.scoringMethod == "ALL") and (args.PAM == "NGG" or args.PAM == "NNAGAAW") and (args.genome == "hg19" or args.genome == "mm10") and not ISOFORMS:
@@ -2940,7 +2933,8 @@ def main():
             pass
 
 
-    if (args.scoringMethod == "KIM_2018" or args.scoringMethod == "ALL") and args.PAM == "TTTN" and not ISOFORMS:
+    if (args.scoringMethod == "KIM_2018" or args.scoringMethod == "ALL") and args.PAM == "TTTN" \
+            and not ISOFORMS and args.MODE == CPF1:
         # noinspection PyBroadException
         try:
             os.environ['KERAS_BACKEND'] = 'theano'
@@ -3004,7 +2998,7 @@ def main():
             pass
 
 
-    if (args.scoringMethod == "DOENCH_2016" or args.scoringMethod == "ALL") and not ISOFORMS:
+    if (args.scoringMethod == "DOENCH_2016" or args.scoringMethod == "ALL") and not ISOFORMS and args.MODE == CRISPR:
         # noinspection PyBroadException
         try:
             with warnings.catch_warnings():
@@ -3053,6 +3047,27 @@ def main():
                         guide.score -= (guide.CoefficientsScore["DOENCH_2016"] / 100) * SCORE['COEFFICIENTS']
         except:
             pass
+
+
+    if args.repairPredictions is not None and not ISOFORMS and args.MODE == CRISPR:
+        sys.path.append('./models/inDelphi-model/')
+        import inDelphi
+        inDelphi.init_model(celltype=args.repairPredictions)
+        for i, guide in enumerate(results):
+            # noinspection PyBroadException
+            try:
+                left_seq = guide.downstream5prim + guide.strandedGuideSeq[:-(len(guide.PAM) + 3)]
+                left_seq = left_seq[-60:]
+                right_seq = guide.strandedGuideSeq[-(len(guide.PAM) + 3):] + guide.downstream3prim
+                right_seq = right_seq[:60]
+                seq = left_seq + right_seq
+                cutsite = len(left_seq)
+                pred_df, stats = inDelphi.predict(seq, cutsite)
+
+                guide.repProfile = pred_df
+                guide.repStats = stats
+            except:
+                pass
 
 
     if args.MODE == CRISPR or args.MODE == CPF1 or ISOFORMS:
