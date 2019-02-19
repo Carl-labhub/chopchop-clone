@@ -994,18 +994,18 @@ def truncateToUTR5(cds_start, exons):
     return exons[:end_exon + 1]
 
 
-def truncateToPROMOTER(strand, exons, bp):
+def truncateToPROMOTER(strand, exons, ups_bp, down_bp):
     """ Truncates the gene to only target promoter +-bp TSS """
 
     if strand == "+":
         first_exon = exons[0]
-        first_exon[2] = first_exon[1] + bp
-        first_exon[1] = first_exon[1] - bp
+        first_exon[2] = first_exon[1] + down_bp
+        first_exon[1] = first_exon[1] - ups_bp
         return [first_exon]
     else:
         first_exon = exons[-1]
-        first_exon[1] = first_exon[2] - bp
-        first_exon[2] = first_exon[2] + bp
+        first_exon[1] = first_exon[2] - down_bp
+        first_exon[2] = first_exon[2] + ups_bp
         return [first_exon]
 
     return exons
@@ -2211,7 +2211,7 @@ def get_isoforms(gene, table_file):
     return gene_isoforms
 
 
-def parseTargets(target_string, genome, use_db, data, pad_size, target_region, exon_subset, promoter_bp,
+def parseTargets(target_string, genome, use_db, data, pad_size, target_region, exon_subset, ups_bp, down_bp,
                  index_dir, output_dir, use_union, make_vis, guideLen):
     targets = []
     vis_coords = []
@@ -2370,7 +2370,7 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                 else:
                     coords = truncateToUTR3(tx[5], coords)
             elif target_region == "PROMOTER":
-                coords = truncateToPROMOTER(tx[6], coords, promoter_bp)
+                coords = truncateToPROMOTER(tx[6], coords, ups_bp, down_bp)
             elif target_region == "UTR3":
                 if tx[6] == "+":
                     coords = truncateToUTR3(tx[5], coords)
@@ -2701,7 +2701,8 @@ def main():
     parser.add_argument("-r", "--gRVD", default="NH ", dest="g_RVD", action="store_const", const="NN ",  help="Use RVD 'NN' instead of 'NH' for guanine nucleotides. 'NH' appears to be more specific than 'NN' but the choice depends on assembly kit.")
     parser.add_argument("-D", "--database", help="Connect to a chopchop database to retrieve gene: user_name:passwd@host/database", metavar="DATABASE", dest="database")
     parser.add_argument("-e", "--exon", help="Comma separated list of exon indices. Only find sites in this subset. ", metavar="EXON_NUMBER", dest="exons")
-    parser.add_argument("-TP", "--targetPromoter", default=200, type=int, help="how many bp to target upstream and downstream of TSS")
+    parser.add_argument("-TDP", "--targetDownstreamPromoter", default=200, type=int, help="how many bp to target downstream of TSS")
+    parser.add_argument("-TUP", "--targetUpstreamPromoter", default=200, type=int, help="how many bp to target upstream of TSS")
     parser.add_argument("-G", "--genome", default="danRer7", metavar="GENOME", help="The genome to search.")
     parser.add_argument("-g", "--guideSize", default=None, type=int, metavar="GUIDE_SIZE", help="The size of the guide RNA.")
     parser.add_argument("-c", "--scoreGC", default=None, action="store_false", help="Score GC content. True for CRISPR, False for TALENs.")
@@ -2839,12 +2840,14 @@ def main():
             args.targets, candidate_fasta_file, args.guideSize, evalSequence)
     else:
         targets, visCoords, strand, gene, isoform, gene_isoforms = parseTargets(
-            args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons, args.targetPromoter,
-            CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.outputDir, args.consensusUnion, args.jsonVisualize, args.guideSize)
+            args.targets, args.genome, use_db, db, padSize, args.targetRegion, args.exons,
+            args.targetUpstreamPromoter, args.targetDownstreamPromoter,
+            CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"],
+            args.outputDir, args.consensusUnion, args.jsonVisualize, args.guideSize)
         sequences, fastaSequence = coordToFasta(
             targets, candidate_fasta_file, args.outputDir, args.guideSize, evalSequence,
-            CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.genome,
-            strand, DOWNSTREAM_NUC)
+            CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"],
+            args.genome, strand, DOWNSTREAM_NUC)
 
     ## Converts genomic coordinates to fasta file of all possible k-mers
     if len(sequences) == 0:
