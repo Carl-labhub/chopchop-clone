@@ -3063,23 +3063,25 @@ def main():
 
     if args.repairPredictions is not None and not ISOFORMS and args.MODE == CRISPR:
         sys.path.append(f_p + '/models/inDelphi-model/')
-        import inDelphi
-        inDelphi.init_model(celltype=args.repairPredictions)
-        for i, guide in enumerate(results):
-            # noinspection PyBroadException
-            try:
-                left_seq = guide.downstream5prim + guide.strandedGuideSeq[:-(len(guide.PAM) + 3)]
-                left_seq = left_seq[-60:]
-                right_seq = guide.strandedGuideSeq[-(len(guide.PAM) + 3):] + guide.downstream3prim
-                right_seq = right_seq[:60]
-                seq = left_seq + right_seq
-                cutsite = len(left_seq)
-                pred_df, stats = inDelphi.predict(seq, cutsite)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            import inDelphi
+            inDelphi.init_model(celltype=args.repairPredictions)
+            for i, guide in enumerate(results):
+                # noinspection PyBroadException
+                try:
+                    left_seq = guide.downstream5prim + guide.strandedGuideSeq[:-(len(guide.PAM) + 3)]
+                    left_seq = left_seq[-60:]
+                    right_seq = guide.strandedGuideSeq[-(len(guide.PAM) + 3):] + guide.downstream3prim
+                    right_seq = right_seq[:60]
+                    seq = left_seq + right_seq
+                    cutsite = len(left_seq)
+                    pred_df, stats = inDelphi.predict(seq, cutsite)
 
-                guide.repProfile = pred_df
-                guide.repStats = stats
-            except:
-                pass
+                    guide.repProfile = pred_df
+                    guide.repStats = stats
+                except:
+                    pass
 
 
     if args.MODE == CRISPR or args.MODE == CPF1 or ISOFORMS:

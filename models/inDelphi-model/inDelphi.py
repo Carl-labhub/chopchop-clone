@@ -526,7 +526,7 @@ def init_model(run_iter = 'aax',
   if init_flag != False:
     return
 
-  print('Initializing model %s/%s, %s...' % (run_iter, param_iter, celltype))
+  #print('Initializing model %s/%s, %s...' % (run_iter, param_iter, celltype))
 
   model_dir = os.path.dirname(os.path.realpath(__file__))
   if sklearn.__version__ == '0.18.1' or sklearn.__version__ == '0.18.2':
@@ -564,6 +564,6 @@ def init_model(run_iter = 'aax',
 
   init_flag = True
 
-  print('Done')
+  #print('Done')
   return
 
