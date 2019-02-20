@@ -4,7 +4,7 @@
 #### This repository is open sourced as specified in the LICENSE file. It is Apache License 2.0.
 
 #### About:
-CHOPCHOP is a python script that allows quick and customizable design of guide RNA. We support selecting target sites for CRISPR/Cas9, CRISPR/Cpf1 or TALEN with wide range of customization. We even support C2c2 for isoform targeting.
+CHOPCHOP is a python script that allows quick and customizable design of guide RNA. We support selecting target sites for CRISPR/Cas9, CRISPR/Cpf1 or TALEN with wide range of customization. We even support Cas13 for isoform targeting.
 
 
 #### Prerequisites:
@@ -24,7 +24,7 @@ CHOPCHOP is a python script that allows quick and customizable design of guide R
     * Select table: refFlat or ensGene
     * Select region: genome
     * Select output format: all fields from selected table
-    * Fill name with extension ".gene_table' eg. danRer10.gene_table
+    * Fill name with extension ".gene_table' e.g. danRer10.gene_table
     * Get output
 - [Download](http://hgdownload.soe.ucsc.edu/downloads.html) *.2bit compressed genome
     * Select organism in complete annotation sets section
@@ -32,13 +32,44 @@ CHOPCHOP is a python script that allows quick and customizable design of guide R
     * download *.2bit file
 - Create fasta version of genome by running twoBitToFa on *.2bit file
 - [Make bowtie compressed version of genome](http://bowtie-bio.sourceforge.net/manual.shtml#the-bowtie-build-indexer) using your new *.fasta file
-- In script chopchop.py (lines 43-45) set paths to your *.2bit genome files, bowtie (*.ewbt) genome files and *.gene_table files
+- Copy config.json and create config_local.json file, replace paths with your own for 
+*.2bit genome files, bowtie (*.ewbt) genome files and *.gene_table files
 - Make sure all these files and programs have proper access rights
 - Have fun using CHOPCHOP as a script  
 
-When using CHOPCHOP for targeting isoforms (eg. C2c2, option ```--isoforms```) one needs also to create transcript version of .fasta file, where each new  description line is describing name of the isoform and following sequence is the sequence of the isoform, reverse complemented if necessary. This can be easily achieved with bedtools getfasta eg. ```bedtools getfasta -fi danRer10.fa -bed danRer10.bed -name -fo danRer10.transciptome.fa -s -split```  
-Bowtie indexes of transcriptome files should also be created. In this situation all possible guides for given isoform will be created, and mismatches will be checked against the transcriptome. Additionally column "Conserved" will indicate True when guide is conserved in the whole family of isoforms of the gene, and False otherwise. Also, column "IsoformsMM0" will contain names of the isoforms (of target isoform gene family) that are also targeted by the guide with 0 mismatches. Column MM0 will contain number of off-targets with 0 mismatches, but without counting of-targets on the same isoform family.
+When using CHOPCHOP for targeting isoforms (e.g. Cas13a, option ```--isoforms```) one needs also to create 
+transcript version of .fasta file, where each new  description line is describing name of the isoform and 
+following sequence is the sequence of the isoform, reverse complemented if necessary. This can be easily 
+achieved with bedtools getfasta e.g.  
+```bedtools getfasta -fi danRer10.fa -bed danRer10.bed -name -fo danRer10.transciptome.fa -s -split```  
+Bowtie indexes of transcriptome files should also be created. In this situation all possible guides 
+for given isoform will be created, and mismatches will be checked against the transcriptome. Additionally 
+column "Constitutive" will indicate True when guide is conserved in the whole family of isoforms of the gene, 
+and False otherwise. Also, column "IsoformsMM0" will contain names of the isoforms (of target isoform gene 
+family) that are also targeted by the guide with 0 mismatches. Column MM0 will contain number of off-targets 
+with 0 mismatches, but without counting of-targets on the same isoform family.
 
+It is also possible for ```--isoforms``` mode to use base pairing probability as efficiency, for this you need to 
+set up a folder with .mt files. To create .mt files you can use ViennaRNA package and run:
+  ```
+ RNAplfold < your_tx_file.fa
+  ```
+  Afterwards use their `mountain.pl` script to creat .mt files, for e.g.
+   ```
+ #!/bin/bash
+ for filename in $1/*.ps; do
+	./mountain.pl < $filename > "$2/$(basename "$filename" _dp.ps).mt"
+ done
+  ```
+  And finally set he path to those .mt files in config_local.json. It is important to name folder the same way you named 
+  the genome files, and transcript files. You can check how its set up on chopchop website or download files from there 
+  directly.
+  
+ - All available chopchop genomes are [downloadable](http://chopchop.cbu.uib.no/bin/genomes/)
+ - Latest SQL database is also available in the folder above, named e.g. chopchop_dev_20180427.sql, you can use 
+ this databse instead of .gene_table files
+ - Isoform folder with isoform related indexes and .mt files is [here](http://chopchop.cbu.uib.no/bin/genomes/isoforms/)
+  
 
 #### Run example:
 List gRNAs using default values for CRIPR/Cas9 for chr10:1000000-1001000, with genome named danRer10 and put results in directory temp:
@@ -73,9 +104,9 @@ List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome n
   ./chopchop_query.py --genePred /full/path/to/genPred/hg19.gene_table -G hg19 -o temp -T 3
   ```
   
-  Design C2c2 guides for selected transcripts of tb gene in Zebrafish:
+  Design Cas13 guides for selected transcripts of tb gene in Zebrafish:
   ```
-  ./chopchop_query.py --gene_names ENSDART00000007204.8,ENSDART00000160271.1,ENSDART00000157768.1 -G danRer10 -g 27 -M C --isoforms -o /tb/ENSDARG00000039806
+  ./chopchop_query.py --gene_names ENSDART00000007204.8,ENSDART00000160271.1,ENSDART00000157768.1 -G danRer10 -g 27 -M H -T 3 --isoforms -o /tb/ENSDARG00000039806
   ```  
   
 #### Explore different options of our CHOPCHOP scripts:
