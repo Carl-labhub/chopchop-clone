@@ -91,16 +91,17 @@ MAX_IN_CLUSTER = 15
 
 # SCORES
 DOWNSTREAM_NUC = 60
-SCORE = {"INPAIR_OFFTARGET_0" : 5000,
-         "INPAIR_OFFTARGET_1" : 3000,
-         "INPAIR_OFFTARGET_2" : 2000,
-         "INPAIR_OFFTARGET_3" : 1000,
-         "OFFTARGET_PAIR_SAME_STRAND" : 10000,
-         "OFFTARGET_PAIR_DIFF_STRAND" : 5000,
-         "MAX_OFFTARGETS" : 20000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
-         "COEFFICIENTS" : 100, # also used for RNA folding in ISOFORM mode
-         "CRISPR_BAD_GC" : 500,
-         "FOLDING" : 1}
+SCORE = {"INPAIR_OFFTARGET_0": 5000,
+         "INPAIR_OFFTARGET_1": 3000,
+         "INPAIR_OFFTARGET_2": 2000,
+         "INPAIR_OFFTARGET_3": 1000,
+         "OFFTARGET_PAIR_SAME_STRAND": 10000,
+         "OFFTARGET_PAIR_DIFF_STRAND": 5000,
+         "PAM_IN_PENALTY": 1000,
+         "MAX_OFFTARGETS": 20000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
+         "COEFFICIENTS": 100, # also used for RNA folding in ISOFORM mode
+         "CRISPR_BAD_GC": 500,
+         "FOLDING": 1}
 
 SINGLE_OFFTARGET_SCORE = [1000, 800, 600, 400]
 GC_LOW = 40
@@ -787,7 +788,8 @@ class Nickase:
                     indivScore += SINGLE_OFFTARGET_SCORE[3]
 
         # Compute penalties (scores) for off-target hits. Worst = off-target pair, Not so bad = off-target single tale
-        self.score = (self.diffStrandOffTarget * SCORE['OFFTARGET_PAIR_DIFF_STRAND']) + tale1.score + tale2.score - indivScore
+        self.score = (self.diffStrandOffTarget * SCORE['OFFTARGET_PAIR_DIFF_STRAND']) + tale1.score + tale2.score - \
+                     indivScore + (tale1.strand == "+") * SCORE['PAM_IN_PENALTY']
         resSites = findRestrictionSites(self.spacerSeq, enzymeCo, minResSiteLen)
         self.restrictionSites = ";".join(map(lambda x: "%s:%s" % (str(x), ",".join(map(str, resSites[x]))), resSites))
 
@@ -1606,12 +1608,12 @@ def writeIndividualResults(outputDir, maxOffTargets, sortedOutput, guideSize, mo
 
         f.write(str(current.strandedGuideSeq)+"\n"+offTargets+"\n")
 
-        if current.repStats is not None:
+        if mode == CRISPR and not ISOFORMS and current.repStats is not None:
             stats_file = '%s/%s_repStats.json' % (outputDir, current.ID)
             with open(stats_file, 'w') as fp:
                 json.dump(current.repStats, fp)
 
-        if current.repProfile is not None:
+        if mode == CRISPR and not ISOFORMS and current.repProfile is not None:
             profile_file = '%s/%s_repProfile.csv' % (outputDir, current.ID)
             current.repProfile.to_csv(profile_file, index=False)
 
@@ -2879,8 +2881,9 @@ def main():
                         bpp.append(rna_folding_metric(args.genome, tx_id, tx_start, tx_end))
                 guide.meanBPP = 100 if len(bpp) == 0 else max(bpp) # penalize guide that has no real target!
             else:
-                tx_start, tx_end = tx_relative_coordinates(visCoords, guide.isoform, guide.start, guide.end)
-                guide.meanBPP = rna_folding_metric(args.genome, guide.isoform, tx_start, tx_end)
+                if not args.fasta:
+                    tx_start, tx_end = tx_relative_coordinates(visCoords, guide.isoform, guide.start, guide.end)
+                    guide.meanBPP = rna_folding_metric(args.genome, guide.isoform, tx_start, tx_end)
 
             guide.score += guide.meanBPP / 100 * SCORE['COEFFICIENTS']
 
@@ -2964,10 +2967,10 @@ def main():
             seq_deep_cpf1.load_weights('./models/Seq_deepCpf1_weights.h5')
 
             # process data
-            data_n = len(results) - 1
+            data_n = len(results)
             one_hot = numpy.zeros((data_n, 34, 4), dtype=int)
 
-            for l in range(1, data_n + 1):
+            for l in range(0, data_n):
                 prim5 = results[l].downstream5prim[-4:]
                 if len(prim5) < 4: # cover weird genomic locations
                     prim5 = "N" * (4 - len(prim5)) + prim5
@@ -2979,18 +2982,18 @@ def main():
 
                 for i in range(34):
                     if seq[i] in "Aa":
-                        one_hot[l - 1, i, 0] = 1
+                        one_hot[l, i, 0] = 1
                     elif seq[i] in "Cc":
-                        one_hot[l - 1, i, 1] = 1
+                        one_hot[l, i, 1] = 1
                     elif seq[i] in "Gg":
-                        one_hot[l - 1, i, 2] = 1
+                        one_hot[l, i, 2] = 1
                     elif seq[i] in "Tt":
-                        one_hot[l - 1, i, 3] = 1
+                        one_hot[l, i, 3] = 1
                     elif seq[i] in "Nn": # N will activate all nodes
-                        one_hot[l - 1, i, 0] = 1
-                        one_hot[l - 1, i, 1] = 1
-                        one_hot[l - 1, i, 2] = 1
-                        one_hot[l - 1, i, 3] = 1
+                        one_hot[l, i, 0] = 1
+                        one_hot[l, i, 1] = 1
+                        one_hot[l, i, 2] = 1
+                        one_hot[l, i, 3] = 1
 
             seq_deep_cpf1_score = seq_deep_cpf1.predict([one_hot], batch_size=50, verbose=0)
 
