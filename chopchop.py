@@ -57,7 +57,7 @@ CRISPR_DEFAULT = {"GUIDE_SIZE" : 20,
                   "PAM": "NGG",
                   "MAX_OFFTARGETS" : 300,
                   "MAX_MISMATCHES" : 3,
-                  "SCORE_GC" : True,
+                  "SCORE_GC" : False, # this is already scored in many models!
                   "SCORE_FOLDING" : True}
 
 TALEN_DEFAULT = {"GUIDE_SIZE" : 18,
@@ -71,14 +71,14 @@ CPF1_DEFAULT =  {"GUIDE_SIZE" : 24,
                  "PAM": "TTTN",
                  "MAX_OFFTARGETS" : 300,
                  "MAX_MISMATCHES" : 3,
-                 "SCORE_GC" : True,
+                 "SCORE_GC" : False,
                  "SCORE_FOLDING" : True}
 
 NICKASE_DEFAULT =  {"GUIDE_SIZE" : 20,
                     "PAM": "NGG",
                     "MAX_OFFTARGETS" : 300,
                     "MAX_MISMATCHES" : 3,
-                    "SCORE_GC" : True,
+                    "SCORE_GC" : False,
                     "SCORE_FOLDING" : True}
 
 TALEN_OFF_TARGET_MIN = 28
@@ -100,7 +100,7 @@ SCORE = {"INPAIR_OFFTARGET_0": 5000,
          "PAM_IN_PENALTY": 1000,
          "MAX_OFFTARGETS": 20000, ## FIX: SPECIFIC FOR TALEN AND CRISPR
          "COEFFICIENTS": 100, # also used for RNA folding in ISOFORM mode
-         "CRISPR_BAD_GC": 500,
+         "CRISPR_BAD_GC": 300,
          "FOLDING": 1}
 
 SINGLE_OFFTARGET_SCORE = [1000, 800, 600, 400]
