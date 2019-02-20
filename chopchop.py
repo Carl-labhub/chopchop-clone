@@ -884,20 +884,20 @@ def scoregRNA(seq, PAM, tail, lookup):
 def scoreChari_2015(svmInputFile, svmOutputFile, PAM, genome):
     """ Calculate score from SVM model as in Chari 2015 20-NGG or 20-NNAGAAW, only for hg19 and mm10"""
 
-    model = './models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
-    dist = './models/Hg19_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
+    model = f_p + '/models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
+    dist = f_p + '/models/Hg19_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
 
     if PAM == 'NGG' and genome == 'mm10':
-        model = './models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
-        dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
+        model = f_p + '/models/293T_HiSeq_SP_Nuclease_100_SVM_Model.txt'
+        dist = f_p + '/models/Mm10_RefFlat_Genes_75bp_NoUTRs_SPSites_SVMOutput.txt'
     elif PAM == 'NNAGAAW' and genome == 'hg19':
-        model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
-        dist = './models/Hg19_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
+        model = f_p + '/models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
+        dist = f_p + '/models/Hg19_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
     elif PAM == 'NNAGAAW' and genome == 'mm10':
-        model = './models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
-        dist = './models/Mm10_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
+        model = f_p + '/models/293T_HiSeq_ST1_Nuclease_100_V2_SVM_Model.txt'
+        dist = f_p + '/models/Mm10_RefFlat_Genes_75bp_NoUTRs_ST1Sites_SVMOutput.txt'
 
-    prog = Popen("./svm_light/svm_classify -v 0 %s %s %s" % (svmInputFile, model, svmOutputFile), shell=True)
+    prog = Popen("%s/svm_light/svm_classify -v 0 %s %s %s" % (f_p, svmInputFile, model, svmOutputFile), shell=True)
     prog.communicate()
 
     svmAll = open(dist,'r')
@@ -2939,7 +2939,7 @@ def main():
             pass
 
 
-    if (args.scoringMethod == "KIM_2018" or args.scoringMethod == "ALL") and args.PAM == "TTTN" \
+    if (args.scoringMethod == "KIM_2018" or args.scoringMethod == "ALL") and args.PAM in "TTTN" \
             and not ISOFORMS and args.MODE == CPF1:
         # noinspection PyBroadException
         try:
@@ -2970,7 +2970,7 @@ def main():
                 seq_deep_cpf1_do4 = Dropout(0.3)(seq_deep_cpf1_d3)
                 seq_deep_cpf1_output = Dense(1, activation='linear')(seq_deep_cpf1_do4)
                 seq_deep_cpf1 = Model(inputs=[seq_deep_cpf1_input_seq], outputs=[seq_deep_cpf1_output])
-                seq_deep_cpf1.load_weights('./models/Seq_deepCpf1_weights.h5')
+                seq_deep_cpf1.load_weights(f_p + '/models/Seq_deepCpf1_weights.h5')
 
                 # process data
                 data_n = len(results)
@@ -3015,7 +3015,7 @@ def main():
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                with open('./models/Doench_2016_18.01_model_nopos.pickle', 'rb') as f:
+                with open(f_p + '/models/Doench_2016_18.01_model_nopos.pickle', 'rb') as f:
                     model = pickle.load(f)
 
             model, learn_options = model
@@ -3062,7 +3062,7 @@ def main():
 
 
     if args.repairPredictions is not None and not ISOFORMS and args.MODE == CRISPR:
-        sys.path.append('./models/inDelphi-model/')
+        sys.path.append(f_p + '/models/inDelphi-model/')
         import inDelphi
         inDelphi.init_model(celltype=args.repairPredictions)
         for i, guide in enumerate(results):
