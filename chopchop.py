@@ -2943,59 +2943,65 @@ def main():
             and not ISOFORMS and args.MODE == CPF1:
         # noinspection PyBroadException
         try:
-            os.environ['KERAS_BACKEND'] = 'theano'
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
 
-            from keras.models import Model
-            from keras.layers import Input
-            from keras.layers.merge import Multiply
-            from keras.layers.core import Dense, Dropout, Activation, Flatten
-            from keras.layers.convolutional import Convolution1D, AveragePooling1D
+                os.environ['KERAS_BACKEND'] = 'theano'
+                stderr = sys.stderr # keras prints welcome message to stderr! lolz!
+                sys.stderr = open(os.devnull, 'w')
 
-            seq_deep_cpf1_input_seq = Input(shape=(34, 4))
-            seq_deep_cpf1_c1 = Convolution1D(80, 5, activation='relu')(seq_deep_cpf1_input_seq)
-            seq_deep_cpf1_p1 = AveragePooling1D(2)(seq_deep_cpf1_c1)
-            seq_deep_cpf1_f = Flatten()(seq_deep_cpf1_p1)
-            seq_deep_cpf1_do1 = Dropout(0.3)(seq_deep_cpf1_f)
-            seq_deep_cpf1_d1 = Dense(80, activation='relu')(seq_deep_cpf1_do1)
-            seq_deep_cpf1_do2 = Dropout(0.3)(seq_deep_cpf1_d1)
-            seq_deep_cpf1_d2 = Dense(40, activation='relu')(seq_deep_cpf1_do2)
-            seq_deep_cpf1_do3 = Dropout(0.3)(seq_deep_cpf1_d2)
-            seq_deep_cpf1_d3 = Dense(40, activation='relu')(seq_deep_cpf1_do3)
-            seq_deep_cpf1_do4 = Dropout(0.3)(seq_deep_cpf1_d3)
-            seq_deep_cpf1_output = Dense(1, activation='linear')(seq_deep_cpf1_do4)
-            seq_deep_cpf1 = Model(inputs=[seq_deep_cpf1_input_seq], outputs=[seq_deep_cpf1_output])
-            seq_deep_cpf1.load_weights('./models/Seq_deepCpf1_weights.h5')
+                from keras.models import Model
+                from keras.layers import Input
+                from keras.layers.merge import Multiply
+                from keras.layers.core import Dense, Dropout, Activation, Flatten
+                from keras.layers.convolutional import Convolution1D, AveragePooling1D
+                sys.stderr = stderr
 
-            # process data
-            data_n = len(results)
-            one_hot = numpy.zeros((data_n, 34, 4), dtype=int)
+                seq_deep_cpf1_input_seq = Input(shape=(34, 4))
+                seq_deep_cpf1_c1 = Convolution1D(80, 5, activation='relu')(seq_deep_cpf1_input_seq)
+                seq_deep_cpf1_p1 = AveragePooling1D(2)(seq_deep_cpf1_c1)
+                seq_deep_cpf1_f = Flatten()(seq_deep_cpf1_p1)
+                seq_deep_cpf1_do1 = Dropout(0.3)(seq_deep_cpf1_f)
+                seq_deep_cpf1_d1 = Dense(80, activation='relu')(seq_deep_cpf1_do1)
+                seq_deep_cpf1_do2 = Dropout(0.3)(seq_deep_cpf1_d1)
+                seq_deep_cpf1_d2 = Dense(40, activation='relu')(seq_deep_cpf1_do2)
+                seq_deep_cpf1_do3 = Dropout(0.3)(seq_deep_cpf1_d2)
+                seq_deep_cpf1_d3 = Dense(40, activation='relu')(seq_deep_cpf1_do3)
+                seq_deep_cpf1_do4 = Dropout(0.3)(seq_deep_cpf1_d3)
+                seq_deep_cpf1_output = Dense(1, activation='linear')(seq_deep_cpf1_do4)
+                seq_deep_cpf1 = Model(inputs=[seq_deep_cpf1_input_seq], outputs=[seq_deep_cpf1_output])
+                seq_deep_cpf1.load_weights('./models/Seq_deepCpf1_weights.h5')
 
-            for l in range(0, data_n):
-                prim5 = results[l].downstream5prim[-4:]
-                if len(prim5) < 4: # cover weird genomic locations
-                    prim5 = "N" * (4 - len(prim5)) + prim5
-                guide_seq = results[l].strandedGuideSeq
-                prim3 = results[l].downstream3prim[:6]
-                if len(prim3) < 6:
-                    prim5 = "N" * (6 - len(prim5)) + prim5
-                seq = prim5 + guide_seq + prim3
+                # process data
+                data_n = len(results)
+                one_hot = numpy.zeros((data_n, 34, 4), dtype=int)
 
-                for i in range(34):
-                    if seq[i] in "Aa":
-                        one_hot[l, i, 0] = 1
-                    elif seq[i] in "Cc":
-                        one_hot[l, i, 1] = 1
-                    elif seq[i] in "Gg":
-                        one_hot[l, i, 2] = 1
-                    elif seq[i] in "Tt":
-                        one_hot[l, i, 3] = 1
-                    elif seq[i] in "Nn": # N will activate all nodes
-                        one_hot[l, i, 0] = 1
-                        one_hot[l, i, 1] = 1
-                        one_hot[l, i, 2] = 1
-                        one_hot[l, i, 3] = 1
+                for l in range(0, data_n):
+                    prim5 = results[l].downstream5prim[-4:]
+                    if len(prim5) < 4: # cover weird genomic locations
+                        prim5 = "N" * (4 - len(prim5)) + prim5
+                    guide_seq = results[l].strandedGuideSeq
+                    prim3 = results[l].downstream3prim[:6]
+                    if len(prim3) < 6:
+                        prim5 = "N" * (6 - len(prim5)) + prim5
+                    seq = prim5 + guide_seq + prim3
 
-            seq_deep_cpf1_score = seq_deep_cpf1.predict([one_hot], batch_size=50, verbose=0)
+                    for i in range(34):
+                        if seq[i] in "Aa":
+                            one_hot[l, i, 0] = 1
+                        elif seq[i] in "Cc":
+                            one_hot[l, i, 1] = 1
+                        elif seq[i] in "Gg":
+                            one_hot[l, i, 2] = 1
+                        elif seq[i] in "Tt":
+                            one_hot[l, i, 3] = 1
+                        elif seq[i] in "Nn": # N will activate all nodes
+                            one_hot[l, i, 0] = 1
+                            one_hot[l, i, 1] = 1
+                            one_hot[l, i, 2] = 1
+                            one_hot[l, i, 3] = 1
+
+                seq_deep_cpf1_score = seq_deep_cpf1.predict([one_hot], batch_size=50, verbose=0)
 
             for i, guide in enumerate(results):
                 guide.CoefficientsScore = seq_deep_cpf1_score[i][0]
