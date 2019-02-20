@@ -56,10 +56,10 @@ set up a folder with .mt files. To create .mt files you can use ViennaRNA packag
   ```
   Afterwards use their `mountain.pl` script to creat .mt files, for e.g.
    ```
- #!/bin/bash
- for filename in $1/*.ps; do
-	./mountain.pl < $filename > "$2/$(basename "$filename" _dp.ps).mt"
- done
+ #!/bin/bash  
+ for filename in $1/*.ps; do  
+	./mountain.pl < $filename > "$2/$(basename "$filename" _dp.ps).mt"  
+ done  
   ```
   And finally set he path to those .mt files in config_local.json. It is important to name folder the same way you named 
   the genome files, and transcript files. You can check how its set up on chopchop website or download files from there 
@@ -72,7 +72,7 @@ set up a folder with .mt files. To create .mt files you can use ViennaRNA packag
   
 
 #### Run example:
-List gRNAs using default values for CRIPR/Cas9 for chr10:1000000-1001000, with genome named danRer10 and put results in directory temp:
+List gRNAs using default values for CRIPR/Cas9 for `chr10:1000000-1001000`, with genome named danRer10 and put results in directory temp:
   
   ```
   ./chopchop.py -G danRer10 -o temp chr10:1000000-1001000
