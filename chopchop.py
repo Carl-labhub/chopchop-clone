@@ -3053,7 +3053,7 @@ def main():
                         outputs[j] = 1
                     elif outputs[j] < 0:
                         outputs[j] = 0
-                    guide.CoefficientsScore["DOENCH_2016"] = outputs[j]
+                    guide.CoefficientsScore["DOENCH_2016"] = outputs[j] * 100
                     j += 1
                     if args.scoringMethod == "DOENCH_2016":
                         guide.score -= (guide.CoefficientsScore["DOENCH_2016"] / 100) * SCORE['COEFFICIENTS']
@@ -3077,7 +3077,7 @@ def main():
                     seq = left_seq + right_seq
                     cutsite = len(left_seq)
                     pred_df, stats = inDelphi.predict(seq, cutsite)
-
+                    pred_df = pred_df.sort_values(pred_df.columns[4], ascending=False)
                     guide.repProfile = pred_df
                     guide.repStats = stats
                 except:
