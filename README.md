@@ -54,16 +54,16 @@ set up a folder with .mt files. To create .mt files you can use ViennaRNA packag
   ```
  RNAplfold < your_tx_file.fa
   ```
-  Afterwards use their `mountain.pl` script to creat .mt files, for e.g.
-   ```
- #!/bin/bash  
- for filename in $1/*.ps; do  
+Afterwards use their `mountain.pl` script to creat .mt files, for e.g.
+```bash
+#!/bin/bash  
+for filename in $1/*.ps; do  
 	./mountain.pl < $filename > "$2/$(basename "$filename" _dp.ps).mt"  
- done  
-  ```
-  And finally set he path to those .mt files in config_local.json. It is important to name folder the same way you named 
-  the genome files, and transcript files. You can check how its set up on chopchop website or download files from there 
-  directly.
+done  
+```
+And finally set he path to those .mt files in config_local.json. It is important to name folder the same way you named 
+the genome files, and transcript files. You can check how its set up on chopchop website or download files from there 
+directly.
   
  - All available chopchop genomes are [downloadable](http://chopchop.cbu.uib.no/bin/genomes/)
  - Latest SQL database is also available in the folder above, named e.g. chopchop_dev_20180427.sql, you can use 
