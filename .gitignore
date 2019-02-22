@@ -6,3 +6,4 @@ config_local.json
 .pydevproject
 featurization.pyc
 chopchop.pyc
+/models/inDelphi-model/*.pyc
