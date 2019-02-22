@@ -75,13 +75,13 @@ directly.
 List gRNAs using default values for CRIPR/Cas9 for `chr10:1000000-1001000`, with genome named danRer10 and put results in directory temp:
   
   ```
-  ./chopchop.py -G danRer10 -o temp chr10:1000000-1001000
+  ./chopchop.py -G danRer10 -o temp -Target chr10:1000000-1001000
   ```
 
 List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome named hg19 and put results in directory temp:
   
   ```
-  ./chopchop.py -G hg19 -o temp NM_144906
+  ./chopchop.py -G hg19 -o temp -Target NM_144906
   ```
 
 #### Additionally we include:  

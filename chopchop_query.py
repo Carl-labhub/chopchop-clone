@@ -79,6 +79,7 @@ def main():
         gene_handle = open(gene_file, "w")
 
         temp_comd = list(command)
+        temp_comd.append("-Target")
         temp_comd.append(gene)
 
         c = subprocess.Popen(temp_comd, stdout = gene_handle, stderr = subprocess.STDOUT)
@@ -157,7 +158,7 @@ def main():
                     for pr in primer_content:
                         L = pr[8] if LR_swap else pr[7]
                         R = pr[7] if LR_swap else pr[8]
-                        LR =  L + R
+                        LR = L + R
                         this_br_rows = config.loc[config["Barcode"] == br]
                         this_br_pr = [a + b for a, b in zip(this_br_rows["Forward_Primer"].tolist(), 
                                                             this_br_rows["Reverse_Primer"].tolist())]
