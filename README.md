@@ -8,10 +8,12 @@ CHOPCHOP is a python script that allows quick and customizable design of guide R
 
 
 #### Prerequisites:
+Please, create separate environment for CHOPCHOP using `virtualenv` to easly manage dependencies.  
+
 - [Python](https://www.python.org/download/) - We operate on 2.7
 - [Biopython module](http://biopython.org/wiki/Download "Biopython module download")
-- Python libraries: pandas, numpy, pickle, scipy
-- Additionally Python library [skcit-learn==0.18.1](https://pypi.python.org/pypi/scikit-learn/0.18.1#downloads) if you want to make use of ```--scoringMethod DOENCH_2016```, otherwise latest version is ok. This older version is required because models from Doench et al. 2016 have been saved with this particular version.
+- Python libraries: pandas, numpy, pickle, scipy, argparse, MySQLdb (if you intend to use our SQL database)
+- Additionally Python library [scikit-learn==0.18.1](https://pypi.python.org/pypi/scikit-learn/0.18.1#downloads) if you want to make use of ```--scoringMethod DOENCH_2016```, otherwise latest version is ok. This older version is required because models from Doench et al. 2016 have been saved with this particular version.
 - Additionally Python library keras with theano backend if you want to use KIM et al 2018 model for Cpf1 efficiency
 - [Bowtie](http://sourceforge.net/projects/bowtie-bio/files/bowtie/1.0.1/ "Bowtie download") - included, but may require compilation for your operating system
 - [twoBitToFa](http://hgdownload.soe.ucsc.edu/admin/exe/ "twoBitToFa download") - included
@@ -83,6 +85,24 @@ List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome n
   ```
   ./chopchop.py -G hg19 -o temp -Target NM_144906
   ```
+
+To imitate output from the website you can use template below to get similar results, but closely examine options on the
+website and adjust settings below. Many options on the website do not have exactly the same name, but read the descriptions
+of each parameter. For the website [valenvm.cbu.uib.no](valenvm.cbu.uib.no) it is possible to get almost all parameters of your query 
+(without database) by simply visiting "http://valenvm.cbu.uib.no/results/YOUR_RUN_ID/query.json". 
+
+  ```
+  chopchop.py -J -P -T 1 -M NGG --maxMismatches 3 -g 20  --scoringMethod DOENCH_2016  -f NN --backbone AGGCTAGTCCGT --replace5P GG  -G hg38  -t CODING -n N  -R 4  -3 'PRODUCT_SIZE_MIN=150,PRODUCT_SIZE_MAX=290,PRIMER_MIN_SIZE=18,PRIMER_MAX_SIZE=25,PRIMER_OPT_SIZE=22,PRIMER_MIN_TM=57,PRIMER_MAX_TM=63,PRIMER_OPT_TM=60' -A 290 -a 20 --rm1perfOff -o temporary/ your_gene_name > temporary/results.txt 2> temporary/python.err
+  ```
+  
+Also, to make sure that chopchop will prefer to create output in case where one of the machine learning alghoritms fails 
+(we are trying to use other authors code without many changes) we are outputing zeros in the Efficiency columns when 
+that happens. Therefore if you see Efficiency column being all zeros, it probably means you might not have properly 
+installed packages required by that alghoritm e.g. DOENCH_2016 or KIM_2018.  
+
+In cases where you see differences in off-targets between website and your own installation of CHOPCHOP, make sure that 
+you are using the same verson of the genome and bowtie indexes as the website. 
+Genomes and indexes are available [here](http://chopchop.cbu.uib.no/bin/genomes/).  
 
 #### Additionally we include:  
 ```control_guides.py``` - script to find CRSIPR Cas9/Cpf1 guides that do not map to selected genome, follow specific GC content, have no self-complementarity or complementarity to the backbone and are filtered for supplied list of restriction sites  
