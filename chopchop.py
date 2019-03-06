@@ -1229,7 +1229,8 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, scoreGC, scoreSelf
 
         sam = sam.groupby([0, 1, 2, 3]).apply(# remove duplicates
             lambda x: x.sort_values(by=11).iloc[0])
-        sam = sam.sort_values(by=[0, 11, 1, 2, 3])
+        sam.rename(columns={0: "name", 11: "mm", 1: "str", 2: "chr", 3: "loc"}, inplace=True)
+        sam = sam.sort_values(by=["name", "mm", "str", "chr", "loc"])
         sam = sam.reset_index(drop=True)
 
     for idx, row in sam.iterrows():
