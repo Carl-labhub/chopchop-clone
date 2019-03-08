@@ -1,23 +1,34 @@
 # CHOPCHOP script
-#### There exists website version of this tool with specifically designed visualization of guides under [chopchop.cbu.uib.no](http://chopchop.cbu.uib.no)
-
 #### This repository is open sourced as specified in the LICENSE file. It is Apache License 2.0.
 
-#### About:
-CHOPCHOP is a python script that allows quick and customizable design of guide RNA. We support selecting target sites for CRISPR/Cas9, CRISPR/Cpf1 or TALEN with wide range of customization. We even support Cas13 for isoform targeting.
+Main CHOPCHOP branch [MASTER](https://bitbucket.org/valenlab/chopchop/src/master/) is usually up to date with 
+[valenvm.cbu.uib.no](valenvm.cbu.uib.no). 
+Currently CHOPCHOP v2 website [chopchop.cbu.uib.no](http://chopchop.cbu.uib.no) is using code from 
+branch [CHOPCHOPv2](https://bitbucket.org/valenlab/chopchop/branch/CHOPCHOPv2).
 
+#### About:
+CHOPCHOP is a python script that allows quick and customizable design of guide RNA. 
+We support selecting target sites for CRISPR/Cas9, CRISPR/Cpf1, TALEN and NICKASE with wide 
+range of customization. We even support Cas13 for isoform targeting.
 
 #### Prerequisites:
-Please, create separate environment for CHOPCHOP using `virtualenv` to easly manage dependencies.  
+Please, create separate environment for CHOPCHOP using `virtualenv` to easly manage dependencies. 
+This is important step, as some dependencies may break your system!
 
 - [Python](https://www.python.org/download/) - We operate on 2.7
 - [Biopython module](http://biopython.org/wiki/Download "Biopython module download")
 - Python libraries: pandas, numpy, pickle, scipy, argparse, MySQLdb (if you intend to use our SQL database)
-- Additionally Python library [scikit-learn==0.18.1](https://pypi.python.org/pypi/scikit-learn/0.18.1#downloads) if you want to make use of ```--scoringMethod DOENCH_2016```, otherwise latest version is ok. This older version is required because models from Doench et al. 2016 have been saved with this particular version.
-- Additionally Python library keras with theano backend if you want to use KIM et al 2018 model for Cpf1 efficiency
-- [Bowtie](http://sourceforge.net/projects/bowtie-bio/files/bowtie/1.0.1/ "Bowtie download") - included, but may require compilation for your operating system
+- Additionally Python library [scikit-learn==0.18.1](https://pypi.python.org/pypi/scikit-learn/0.18.1#downloads) 
+if you want to make use of ```--scoringMethod DOENCH_2016```, otherwise latest version is ok. 
+This older version is required because models from Doench et al. 2016 have been saved with this 
+particular version.
+- Additionally Python library [keras](https://keras.io/) with [theano](http://deeplearning.net/software/theano/) 
+backend if you want to use KIM et al 2018 model for Cpf1 efficiency
+- [Bowtie](http://sourceforge.net/projects/bowtie-bio/files/bowtie/1.0.1/ "Bowtie download") - included, 
+but may require compilation for your operating system
 - [twoBitToFa](http://hgdownload.soe.ucsc.edu/admin/exe/ "twoBitToFa download") - included
-- [svm_light](http://svmlight.joachims.org/ "svm_light download") - included, but may require compilation for your operating system, necessary only with option ```--scoringMethod CHARI_2015```, only working for mm10 and hg19 genomes with NGG or NNAGAAW PAMs, otherwise returns zeros
+- [svm_light](http://svmlight.joachims.org/ "svm_light download") - included, 
+but may require compilation for your operating system, necessary only with option ```--scoringMethod CHARI_2015```, only working for mm10 and hg19 genomes with NGG or NNAGAAW PAMs, otherwise returns zeros
 - [primer3](http://primer3.sourceforge.net/releases.php "primer3 download") - included
 - CHOPCHOP script will need a [table](http://genome.ucsc.edu/cgi-bin/hgTables?command=start) to look up genomic coordinates if you want to supply names of the genes rather than coordinates. To get example genePred table:
     * Select organism and assembly 
@@ -39,17 +50,52 @@ Please, create separate environment for CHOPCHOP using `virtualenv` to easly man
 - Make sure all these files and programs have proper access rights
 - Have fun using CHOPCHOP as a script  
 
+It is also possible to download current database and all genomes (and transcriptomes) that are used on
+CHOPCHOP websites instead of creating your own files. All available chopchop genomes are 
+[downloadable](http://chopchop.cbu.uib.no/bin/genomes/). Isoform folder with isoform related indexes and 
+`.mt` files with local structure is [here](http://chopchop.cbu.uib.no/bin/genomes/isoforms/). To build your own
+local structure you will have to have same structure as we have on the website, every genome gets its own folder,
+every transcript has its own file:  
+
+To get transcriptome I use approach of gtf > genePred > bed > transcriptome. Utility scripts for that can be found on 
+the UCSC servers e.g. [here](http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/).  
+
+From gtf to genePred  
+`
+gtfToGenePred -genePredExt -geneNameAsName2 gencode.v29.annotation.gtf hg38.genePred
+`
+  
+To make .gene_table format make sure your genePred file contains these columns, if not add them at the top of 
+the file:  
+`
+name	chrom	strand	txStart	txEnd	cdsStart	cdsEnd	exonCount	exonStarts	exonEnds	score	name2	cdsStartStat	cdsEndStat	exonFrames
+`  
+
+Also the name or name columns are what you will have to be using for identification of your gene targets, if you 
+have indexes or you don't like your names, process them at this moment. Finally, just renaming .genePred 
+extension to .gene_table will allow you to have regular annotation ready for CHOPCHOP script.  
+
 When using CHOPCHOP for targeting isoforms (e.g. Cas13a, option ```--isoforms```) one needs also to create 
-transcript version of .fasta file, where each new  description line is describing name of the isoform and 
+transcript version of .fasta file, where each new description line is describing name of the isoform and 
 following sequence is the sequence of the isoform, reverse complemented if necessary. This can be easily 
 achieved with bedtools getfasta e.g.  
-```bedtools getfasta -fi danRer10.fa -bed danRer10.bed -name -fo danRer10.transciptome.fa -s -split```  
+
+`
+genePredToBed your_input.genePred output.bed
+bedtools getfasta -fi your_genome.fa -bed above_output.bed -name -s -split -fo transcriptome.fa
+`  
+
 Bowtie indexes of transcriptome files should also be created. In this situation all possible guides 
 for given isoform will be created, and mismatches will be checked against the transcriptome. Additionally 
 column "Constitutive" will indicate True when guide is conserved in the whole family of isoforms of the gene, 
 and False otherwise. Also, column "IsoformsMM0" will contain names of the isoforms (of target isoform gene 
 family) that are also targeted by the guide with 0 mismatches. Column MM0 will contain number of off-targets 
-with 0 mismatches, but without counting of-targets on the same isoform family.
+with 0 mismatches, but without counting of-targets on the same isoform family.  
+
+With the above you will have a transcriptome file which you will have to build indexes for, for the moment genome
+file in form of .2bit is still required by CHOPCHOP script, therefore make sure to have them in the isoform folder.
+Regular search of target will happen on the genome level although off-target search will happen on transcriptome 
+level.  
 
 It is also possible for ```--isoforms``` mode to use base pairing probability as efficiency, for this you need to 
 set up a folder with .mt files. To create .mt files you can use ViennaRNA package and run:
@@ -65,13 +111,36 @@ done
 ```
 And finally set he path to those .mt files in config_local.json. It is important to name folder the same way you named 
 the genome files, and transcript files. You can check how its set up on chopchop website or download files from there 
-directly.
-  
- - All available chopchop genomes are [downloadable](http://chopchop.cbu.uib.no/bin/genomes/)
- - Latest SQL database is also available in the folder above, named e.g. chopchop_dev_20180427.sql, you can use 
- this databse instead of .gene_table files
- - Isoform folder with isoform related indexes and .mt files is [here](http://chopchop.cbu.uib.no/bin/genomes/isoforms/)
-  
+directly.  
+`
+
+
+Latest SQL database is also available in the [folder](http://chopchop.cbu.uib.no/bin/genomes/) named 
+e.g. chopchop_dev_20180427.sql, you can use this databse instead of .gene_table files. To use
+database you would have to install yourself MySQL, and have [MySQL](https://pypi.org/project/MySQL-python/) 
+python package installed, then you can try to import database with something like:  
+
+`
+mysql -u root -p  
+CREATE DATABASE chopchop_dev;  
+CREATE USER 'chopchop'@'localhost' IDENTIFIED BY 'your password';  
+GRANT ALL PRIVILEGES ON * . * TO 'chopchop'@'localhost';  
+FLUSH PRIVILEGES;  
+exit  
+
+mysql -u chopchop -p chopchop_dev < /path/to/downloaded/sql/database/chopchop_dev.sql
+`  
+
+After database was set up you can start using it by adding parameter `--database` e.g. 
+
+`chopchop:your password@localhost/chopchop_dev`.  
+
+
+#### Notes
+Efficiency scores are programmed so that when they fail, they will not print errors and 
+exit, but rather assume efficiencies of 0 and proceed. Therefore if you see your efficiency score has all zeros in 
+efficiency column it probably means something is not properly installed for this scoring method to work.  
+
 
 #### Run example:
 List gRNAs using default values for CRIPR/Cas9 for `chr10:1000000-1001000`, with genome named danRer10 and put results in directory temp:
