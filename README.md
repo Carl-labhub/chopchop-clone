@@ -80,10 +80,10 @@ transcript version of .fasta file, where each new description line is describing
 following sequence is the sequence of the isoform, reverse complemented if necessary. This can be easily 
 achieved with bedtools getfasta e.g.  
 
-`
-genePredToBed your_input.genePred output.bed  
+```bash
+genePredToBed your_input.genePred output.bed
 bedtools getfasta -fi your_genome.fa -bed above_output.bed -name -s -split -fo transcriptome.fa
-`  
+```
 
 Bowtie indexes of transcriptome files should also be created. In this situation all possible guides 
 for given isoform will be created, and mismatches will be checked against the transcriptome. Additionally 
@@ -99,9 +99,9 @@ level.
 
 It is also possible for ```--isoforms``` mode to use base pairing probability as efficiency, for this you need to 
 set up a folder with .mt files. To create .mt files you can use ViennaRNA package and run:
-  ```
+```bash
  RNAplfold < your_tx_file.fa
-  ```
+```
 Afterwards use their `mountain.pl` script to creat .mt files, for e.g.
 ```bash
 #!/bin/bash  
@@ -120,15 +120,15 @@ e.g. chopchop_dev_20180427.sql, you can use this databse instead of .gene_table 
 database you would have to install yourself MySQL, and have [MySQL](https://pypi.org/project/MySQL-python/) 
 python package installed, then you can try to import database with something like:  
 
-`
-mysql -u root -p  
-CREATE DATABASE chopchop_dev;  
-CREATE USER 'chopchop'@'localhost' IDENTIFIED BY 'your password';  
-GRANT ALL PRIVILEGES ON * . * TO 'chopchop'@'localhost';  
-FLUSH PRIVILEGES;  
-exit  
+```bash
+mysql -u root -p
+CREATE DATABASE chopchop_dev;
+CREATE USER 'chopchop'@'localhost' IDENTIFIED BY 'your password';
+GRANT ALL PRIVILEGES ON * . * TO 'chopchop'@'localhost';
+FLUSH PRIVILEGES;
+exit
 mysql -u chopchop -p chopchop_dev < /path/to/downloaded/sql/database/chopchop_dev.sql
-`  
+```
 
 After database was set up you can start using it by adding parameter `--database` e.g. 
 `chopchop:your password@localhost/chopchop_dev`.  
