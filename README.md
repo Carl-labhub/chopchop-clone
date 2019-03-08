@@ -81,7 +81,7 @@ following sequence is the sequence of the isoform, reverse complemented if neces
 achieved with bedtools getfasta e.g.  
 
 `
-genePredToBed your_input.genePred output.bed
+genePredToBed your_input.genePred output.bed  
 bedtools getfasta -fi your_genome.fa -bed above_output.bed -name -s -split -fo transcriptome.fa
 `  
 
@@ -127,12 +127,10 @@ CREATE USER 'chopchop'@'localhost' IDENTIFIED BY 'your password';
 GRANT ALL PRIVILEGES ON * . * TO 'chopchop'@'localhost';  
 FLUSH PRIVILEGES;  
 exit  
-
 mysql -u chopchop -p chopchop_dev < /path/to/downloaded/sql/database/chopchop_dev.sql
 `  
 
 After database was set up you can start using it by adding parameter `--database` e.g. 
-
 `chopchop:your password@localhost/chopchop_dev`.  
 
 
