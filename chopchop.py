@@ -1356,7 +1356,7 @@ def runBowtiePrimers(primerFastaFileName, outputDir, genome, bowtieIndexDir, max
                        maxOffTargets, None, None, False, None, None)
 
 
-def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir,
+def make_primers_fasta(targets, outputDir, flanks, displayFlanks, genome, limitPrintResults, bowtieIndexDir,
                        fastaSequence, primer3options, guidePadding, enzymeCo, minResSiteLen, geneID, maxOffTargets):
     primers = {}
     primerOpt = get_primer_options(primer3options)
@@ -1374,7 +1374,8 @@ def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bo
         # Restriction sites
         restSites = dump_restriction_sites(target, seq, flanks, enzymeCo, outputDir, minResSiteLen)
         # Sequence for visualization of locus
-        dump_locus_sequence(target, outputDir, seq, seqLenBeforeTarget, "+")
+        seq2, seqLenBeforeTarget2 = get_primer_query_sequence_fasta(target, outputDir, displayFlanks, fastaSequence)
+        dump_locus_sequence(target, outputDir, seq2, seqLenBeforeTarget2, "+")
         # Genbank file for download
         dump_genbank_file(seq, target, restSites, primerPos, outputDir, geneID, target.start-seqLenBeforeTarget, "+")
 
@@ -1384,7 +1385,7 @@ def make_primers_fasta(targets, outputDir, flanks, genome, limitPrintResults, bo
     pairPrimers(primers, primerResults, outputDir)
 
 
-def make_primers_genome(targets, outputDir, flanks, genome, limitPrintResults, bowtieIndexDir, twoBitToFaIndexDir,
+def make_primers_genome(targets, outputDir, flanks, display_seq_len, genome, limitPrintResults, bowtieIndexDir, twoBitToFaIndexDir,
                         primer3options, guidePadding, enzymeCo, minResSiteLen, strand, geneID, maxOffTargets):
     primers = {}
 
@@ -1405,7 +1406,9 @@ def make_primers_genome(targets, outputDir, flanks, genome, limitPrintResults, b
         # Restriction sites
         restSites = dump_restriction_sites(target, seq, flanks, enzymeCo, outputDir, minResSiteLen)
         # Sequence for visualization of locus
-        dump_locus_sequence(target, outputDir, seq, seqLenBeforeTarget, strand)
+        seq2, seqLenBeforeTarget2 = get_primer_query_sequence_2bit(
+            target, outputDir, display_seq_len, genome, twoBitToFaIndexDir, strand)
+        dump_locus_sequence(target, outputDir, seq2, seqLenBeforeTarget2, strand)
         # Genbank file for download
         dump_genbank_file(seq, target, restSites, primerPos, outputDir, geneID, target.start-seqLenBeforeTarget, strand)
 
@@ -2731,6 +2734,7 @@ def main():
     parser.add_argument("-P", "--makePrimers", default=False, action="store_true", help="Designes primers using Primer3 to detect mutation.")
     parser.add_argument("-3", "--primer3options", default=None, help="Options for Primer3. E.g. 'KEY1=VALUE1,KEY2=VALUE2'")
     parser.add_argument("-A", "--primerFlanks", default=300, type=int, help="Size of flanking regions to search for primers.")
+    parser.add_argument("-DF", "--displaySeqFlanks", default=300, type=int, help="Size of flanking regions to output sequence into locusSeq_.")
     parser.add_argument("-a", "--guidePadding", default=20, type=int, help="Minimum distance of primer to target site.")
     parser.add_argument("-O", "--limitPrintResults", default=4000, dest="limitPrintResults", help="The number of results to print extended information for. Web server can handle 4k of these.")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
@@ -3128,9 +3132,9 @@ def main():
 
     if args.makePrimers:
         if args.fasta:
-            make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
+            make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.displaySeqFlanks, args.displaySeqFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
         else:
-            make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
+            make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.displaySeqFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
 
 
     ## Print results
@@ -3280,4 +3284,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
