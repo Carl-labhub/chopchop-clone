@@ -2,9 +2,8 @@
 #### This repository is open sourced as specified in the LICENSE file. It is Apache License 2.0.
 
 Main CHOPCHOP branch [MASTER](https://bitbucket.org/valenlab/chopchop/src/master/) is usually up to date with 
-[valenvm.cbu.uib.no](valenvm.cbu.uib.no). 
-Currently CHOPCHOP v2 website [chopchop.cbu.uib.no](http://chopchop.cbu.uib.no) is using code from 
-branch [CHOPCHOPv2](https://bitbucket.org/valenlab/chopchop/branch/CHOPCHOPv2).
+[chopchop.cbu.uib.no](https://chopchop.cbu.uib.no/).
+For CHOPCHOPv2 check out code from branch [CHOPCHOPv2](https://bitbucket.org/valenlab/chopchop/branch/CHOPCHOPv2).
 
 #### About:
 CHOPCHOP is a python script that allows quick and customizable design of guide RNA. 
@@ -52,8 +51,8 @@ but may require compilation for your operating system, necessary only with optio
 
 It is also possible to download current database and all genomes (and transcriptomes) that are used on
 CHOPCHOP websites instead of creating your own files. All available chopchop genomes are 
-[downloadable](http://chopchop.cbu.uib.no/bin/genomes/). Isoform folder with isoform related indexes and 
-`.mt` files with local structure is [here](http://chopchop.cbu.uib.no/bin/genomes/isoforms/). To build your own
+[downloadable](http://129.177.123.213/). Isoform folder with isoform related indexes and 
+`.mt` files with local structure is [here](http://129.177.123.213/isoforms/). To build your own
 local structure you will have to have same structure as we have on the website, every genome gets its own folder,
 every transcript has its own file:  
 
@@ -66,7 +65,7 @@ gtfToGenePred -genePredExt -geneNameAsName2 gencode.v29.annotation.gtf hg38.gene
 `
   
 To make .gene_table format make sure your genePred file contains these columns, if not add them at the top of 
-the file:  
+the file (they should be tab delimited):  
 `
 name	chrom	strand	txStart	txEnd	cdsStart	cdsEnd	exonCount	exonStarts	exonEnds	score	name2	cdsStartStat	cdsEndStat	exonFrames
 `  
@@ -115,7 +114,7 @@ directly.
 `
 
 
-Latest SQL database is also available in the [folder](http://chopchop.cbu.uib.no/bin/genomes/) named 
+Latest SQL database is also available in the [folder](http://129.177.123.213/) named 
 e.g. chopchop_dev_20180427.sql, you can use this databse instead of .gene_table files. To use
 database you would have to install yourself MySQL, and have [MySQL](https://pypi.org/project/MySQL-python/) 
 python package installed, then you can try to import database with something like:  
@@ -155,7 +154,7 @@ List gRNAs using default values for CRIPR/Cas9 for gene NM_144906, with genome n
 
 To imitate output from the website you can use template below to get similar results, but closely examine options on the
 website and adjust settings below. Many options on the website do not have exactly the same name, but read the descriptions
-of each parameter. For the website [valenvm.cbu.uib.no](valenvm.cbu.uib.no) it is possible to get almost all parameters of your query 
+of each parameter. For the website [chopchop.cbu.uib.no](https://chopchop.cbu.uib.no/) it is possible to get almost all parameters of your query 
 (without database) by simply visiting "http://valenvm.cbu.uib.no/results/YOUR_RUN_ID/query.json". 
 
   ```
@@ -169,7 +168,7 @@ installed packages required by that alghoritm e.g. DOENCH_2016 or KIM_2018.
 
 In cases where you see differences in off-targets between website and your own installation of CHOPCHOP, make sure that 
 you are using the same verson of the genome and bowtie indexes as the website. 
-Genomes and indexes are available [here](http://chopchop.cbu.uib.no/bin/genomes/).  
+Genomes and indexes are available [here](http://129.177.123.213/).  
 
 #### Additionally we include:  
 ```control_guides.py``` - script to find CRSIPR Cas9/Cpf1 guides that do not map to selected genome, follow specific GC content, have no self-complementarity or complementarity to the backbone and are filtered for supplied list of restriction sites  
