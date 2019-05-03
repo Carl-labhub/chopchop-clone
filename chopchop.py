@@ -2391,7 +2391,8 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
             # filter exons that are too truncated
             coords = [x for x in coords if x[1] < x[2]]
             if not coords:
-                gene_isoforms.remove(tx[3])
+                if gene_isoforms:
+                    gene_isoforms.remove(tx[3])
                 del vis_coords[-1]
 
             # compute intersection/union on all exons
