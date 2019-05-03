@@ -2418,7 +2418,8 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                             "Computing intersection over specified isoforms resulted in lack of targets." +
                             " Consider either using specific isoform as input: " + ', '.join(isoforms) +
                             " or using --consensusUnion to compute union instead of intersection " +
-                            "of your isoforms.")
+                            "of your isoforms (on the website you can find it in " +
+                            "Options -> General -> Isoform consensus determined by -> Union.")
                         sys.exit(EXIT['GENE_ERROR'])
                 else:
                     targets_ = []
