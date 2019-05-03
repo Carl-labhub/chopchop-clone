@@ -3132,7 +3132,7 @@ def main():
 
     if args.makePrimers:
         if args.fasta:
-            make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.displaySeqFlanks, args.displaySeqFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
+            make_primers_fasta(sortedOutput, args.outputDir, args.primerFlanks, args.displaySeqFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], fastaSequence, args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, "sequence", args.maxOffTargets)
         else:
             make_primers_genome(sortedOutput, args.outputDir, args.primerFlanks, args.displaySeqFlanks, args.genome, args.limitPrintResults, CONFIG["PATH"]["BOWTIE_INDEX_DIR"], CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"], args.primer3options, args.guidePadding, args.enzymeCo, args.minResSiteLen, strand, args.targets, args.maxOffTargets)
 
