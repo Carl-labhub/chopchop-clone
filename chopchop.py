@@ -2263,13 +2263,17 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                 sys.exit(EXIT['GENE_ERROR'])
 
     else:
+        seen = set()
         if use_db:
             if ISOFORMS:
                 sys.stderr.write("--isoforms is not working with database search.\n")
                 sys.exit(EXIT['ISOFORMS_ERROR'])
             txInfo = geneToCoord_db(target_string, genome, data)
+            # if more isoforms have exact same name take first one
+            txInfo = [x for x in txInfo if not (str(x[3]) in seen or seen.add(str(x[3])))]
         else:
             gene, txInfo = geneToCoord_file(target_string, data)
+            txInfo = [x for x in txInfo if not (str(x[3]) in seen or seen.add(str(x[3])))]
             isoform = "union" if use_union else "intersection"
             gene_isoforms = set([str(x[3]) for x in txInfo])
             if target_string in gene_isoforms:
