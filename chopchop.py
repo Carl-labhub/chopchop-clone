@@ -1186,12 +1186,12 @@ def runBowtie(PAMlength, unique_method_cong, fasta_file, output_dir,
         # the -l alignment mode specifies a seed region to search for the number of mismatches specified with the
         # -n option. Outside of that seed, up to 2 mismatches are searched.
         # E.g. -l 15 -n 0 will search the first 15 bases with no mismatches, and the rest with up to 3 mismatches
-        command = "%s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (
-            CONFIG["PATH"]["BOWTIE"], (PAMlength + 11), max_mismatches, max_off_targets, max_off_targets, index_dir,
+        command = "%s -p %s -l %d -n %d -m %d --sam-nohead -k %d %s/%s -f %s -S %s " % (
+            CONFIG["PATH"]["BOWTIE"], CONFIG["THREADS"], (PAMlength + 11), max_mismatches, max_off_targets, max_off_targets, index_dir,
             genome, fasta_file, bwt_results_file)
     else:
-        command = "%s -v %d --sam-nohead -k %d %s/%s -f %s -S %s " % (
-            CONFIG["PATH"]["BOWTIE"], max_mismatches, max_off_targets, index_dir, genome, fasta_file, bwt_results_file)
+        command = "%s -p %s -v %d --sam-nohead -k %d %s/%s -f %s -S %s " % (
+            CONFIG["PATH"]["BOWTIE"], CONFIG["THREADS"], max_mismatches, max_off_targets, index_dir, genome, fasta_file, bwt_results_file)
 
     if ISOFORMS: # When ISFORMS we don't check reverse complement
         command += "--norc "
