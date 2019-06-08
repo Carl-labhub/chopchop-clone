@@ -2306,26 +2306,28 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
             del ends[-1]
             starts = map(int, starts)
             ends = map(int, ends)
+            starts_v = starts[:]
+            ends_v = ends[:]
             tx_vis = {"exons": [], "ATG": [], "name": tx[3]}
 
             if make_vis:
-                intron_size = [int(starts[x + 1]) - int(ends[x]) for x in range(len(starts) - 1)]
+                intron_size = [int(starts_v[x + 1]) - int(ends_v[x]) for x in range(len(starts_v) - 1)]
                 intron_size.append(0)
                 # tx_vis exons are [chr, start, end, intron_size, isIntron, strand]
-                for e in range(len(starts)):
-                    if ends[e] <= tx[4] or starts[e] >= tx[5]:
-                        tx_vis["exons"].append([tx[0], starts[e], ends[e], intron_size[e], True, tx[6]])
+                for e in range(len(starts_v)):
+                    if ends_v[e] <= tx[4] or starts_v[e] >= tx[5]:
+                        tx_vis["exons"].append([tx[0], starts_v[e], ends_v[e], intron_size[e], True, tx[6]])
                     else:
-                        if starts[e] < tx[4] < ends[e]:
-                            tx_vis["exons"].append([tx[0], starts[e], tx[4], 0, True, tx[6]])
-                            starts[e] = tx[4]
+                        if starts_v[e] < tx[4] < ends_v[e]:
+                            tx_vis["exons"].append([tx[0], starts_v[e], tx[4], 0, True, tx[6]])
+                            starts_v[e] = tx[4]
 
-                        if starts[e] < tx[5] < ends[e]:
-                            tx_vis["exons"].append([tx[0], tx[5], ends[e], intron_size[e], True, tx[6]])
-                            ends[e] = tx[5]
+                        if starts_v[e] < tx[5] < ends_v[e]:
+                            tx_vis["exons"].append([tx[0], tx[5], ends_v[e], intron_size[e], True, tx[6]])
+                            ends_v[e] = tx[5]
                             intron_size[e] = 0
 
-                        tx_vis["exons"].append([tx[0], starts[e], ends[e], intron_size[e], False, tx[6]])
+                        tx_vis["exons"].append([tx[0], starts_v[e], ends_v[e], intron_size[e], False, tx[6]])
 
                 tx_vis["exons"].sort(key=lambda x: x[1]) # sort on starts
                 # ATG locations
@@ -2746,7 +2748,7 @@ def main():
     parser.add_argument("-A", "--primerFlanks", default=300, type=int, help="Size of flanking regions to search for primers.")
     parser.add_argument("-DF", "--displaySeqFlanks", default=300, type=int, help="Size of flanking regions to output sequence into locusSeq_.")
     parser.add_argument("-a", "--guidePadding", default=20, type=int, help="Minimum distance of primer to target site.")
-    parser.add_argument("-O", "--limitPrintResults", default= 3000 if HARD_LIMIT > 3000 else HARD_LIMIT, dest="limitPrintResults", help="The number of results to print extended information for. Web server can handle 4k of these.")
+    parser.add_argument("-O", "--limitPrintResults", type=int, default=3000 if HARD_LIMIT > 3000 else HARD_LIMIT, dest="limitPrintResults", help="The number of results to print extended information for. Web server can handle 4k of these.")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
     parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type=str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "KIM_2018", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
