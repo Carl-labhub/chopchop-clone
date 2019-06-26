@@ -2532,9 +2532,9 @@ def subsetExons(exons, targets):
 def connect_db(database_string):
     import MySQLdb
 
-    m = re.compile("(\w+):(\w+)@(\w+)/(\w+)").search(database_string)
+    m = re.compile("(.+):(.+)@(.+)/(.+)").search(database_string)
     if not m:
-        sys.stderr.write("Wrong syntax for connection string: %s\n" % database_string)
+        sys.stderr.write("Wrong syntax for connection string: username:pass@localhost/db_name")
         sys.exit(EXIT["DB_ERROR"])
 
     try:
