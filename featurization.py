@@ -86,7 +86,7 @@ def NGGX_interaction_feature(data, pam_audit=True):
         NX = seq[24]+seq[27]
         NX_onehot = nucleotide_features(NX,order=2, feature_type='pos_dependent', max_index_to_use=2, prefix="NGGX")
         # NX_onehot[:] = np.random.rand(NX_onehot.shape[0]) ##TESTING RANDOM FEATURE
-        feat_NX = pandas.concat([feat_NX, NX_onehot], axis=1)
+        feat_NX = pandas.concat([feat_NX, NX_onehot], axis=1, sort=True)
     return feat_NX.T
 
 
