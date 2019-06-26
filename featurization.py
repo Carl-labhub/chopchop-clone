@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7 -W ignore::DeprecationWarning
+#!/usr/bin/env python2.7
 
 # This file is copied and modified to suit our needs from https://github.com/MicrosoftResearch/Azimuth
 # Azimuth license applies to this file (BSD 3-Clause)
