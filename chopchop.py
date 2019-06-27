@@ -3031,7 +3031,7 @@ def main():
         # noinspection PyBroadException
         try:
             with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+                warnings.simplefilter("error")
                 with open(f_p + '/models/Doench_2016_18.01_model_nopos.pickle', 'rb') as f:
                     model = pickle.load(f)
 

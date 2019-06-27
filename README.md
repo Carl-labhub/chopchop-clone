@@ -21,7 +21,7 @@ This is important step, as some dependencies may break your system!
 if you want to make use of ```--scoringMethod DOENCH_2016```, otherwise latest version is ok. 
 This older version is required because models from Doench et al. 2016 have been saved with this 
 particular version.
-- Additionally Python library [keras](https://keras.io/) with [theano](http://deeplearning.net/software/theano/) 
+- Additionally Python library [keras](https://keras.io/) + np_utils, with [theano](http://deeplearning.net/software/theano/) 
 backend if you want to use KIM et al 2018 model for Cpf1 efficiency
 - [Bowtie](http://sourceforge.net/projects/bowtie-bio/files/bowtie/1.0.1/ "Bowtie download") - included, 
 but may require compilation for your operating system
