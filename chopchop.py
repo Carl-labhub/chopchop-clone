@@ -2677,7 +2677,7 @@ def print_genbank(mode, name, seq, exons, targets, chrom, seq_start, seq_end, st
             record.features.append(SeqFeature(FeatureLocation(exon[1]-seq_start, exon[2]-seq_start,
                                                               strand=gene_strand), type="gene_loci"))
 
-    with warnings.catch_warnings():
+    with warnings.catch_warnings(record=True):
         warnings.simplefilter("ignore")
         SeqIO.write(record, genbank_file, "genbank")
     genbank_file.close()
@@ -2960,7 +2960,7 @@ def main():
             and not ISOFORMS and args.MODE == CPF1:
         # noinspection PyBroadException
         try:
-            with warnings.catch_warnings():
+            with warnings.catch_warnings(record=True):
                 warnings.simplefilter("ignore")
 
                 os.environ['KERAS_BACKEND'] = 'theano'
@@ -3030,8 +3030,8 @@ def main():
     if (args.scoringMethod == "DOENCH_2016" or args.scoringMethod == "ALL") and not ISOFORMS and args.MODE == CRISPR:
         # noinspection PyBroadException
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error")
+            with warnings.catch_warnings(record=True):
+                warnings.simplefilter("ignore")
                 with open(f_p + '/models/Doench_2016_18.01_model_nopos.pickle', 'rb') as f:
                     model = pickle.load(f)
 
@@ -3080,7 +3080,7 @@ def main():
 
     if args.repairPredictions is not None and not ISOFORMS and args.MODE == CRISPR:
         sys.path.append(f_p + '/models/inDelphi-model/')
-        with warnings.catch_warnings():
+        with warnings.catch_warnings(record=True):
             warnings.simplefilter("ignore")
             import inDelphi
             inDelphi.init_model(celltype=args.repairPredictions)
