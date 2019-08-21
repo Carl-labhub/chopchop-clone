@@ -51,8 +51,8 @@ but may require compilation for your operating system, necessary only with optio
 
 It is also possible to download current database and all genomes (and transcriptomes) that are used on
 CHOPCHOP websites instead of creating your own files. All available chopchop genomes are 
-[downloadable](http://129.177.123.213/). Isoform folder with isoform related indexes and 
-`.mt` files with local structure is [here](http://129.177.123.213/isoforms/). To build your own
+[downloadable](https://chopchop.cbu.uib.no/genomes/). Isoform folder with isoform related indexes and 
+`.mt` files with local structure is [here](https://chopchop.cbu.uib.no/genomes/isoforms/). To build your own
 local structure you will have to have same structure as we have on the website, every genome gets its own folder,
 every transcript has its own file:  
 
@@ -114,7 +114,7 @@ directly.
 `
 
 
-Latest SQL database is also available in the [folder](http://129.177.123.213/) named 
+Latest SQL database is also available in the [folder](https://chopchop.cbu.uib.no/genomes/) named 
 e.g. chopchop_dev_20180427.sql, you can use this databse instead of .gene_table files. To use
 database you would have to install yourself MySQL, and have [MySQL](https://pypi.org/project/MySQL-python/) 
 python package installed, then you can try to import database with something like:  
@@ -168,7 +168,7 @@ installed packages required by that alghoritm e.g. DOENCH_2016 or KIM_2018.
 
 In cases where you see differences in off-targets between website and your own installation of CHOPCHOP, make sure that 
 you are using the same verson of the genome and bowtie indexes as the website. 
-Genomes and indexes are available [here](http://129.177.123.213/).  
+Genomes and indexes are available [here](https://chopchop.cbu.uib.no/genomes/).  
 
 #### Additionally we include:  
 ```control_guides.py``` - script to find CRSIPR Cas9/Cpf1 guides that do not map to selected genome, follow specific GC content, have no self-complementarity or complementarity to the backbone and are filtered for supplied list of restriction sites  
