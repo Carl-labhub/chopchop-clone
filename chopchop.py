@@ -275,7 +275,7 @@ class Hit:
 
     def asOffTargetString(self, label, maxOffTargets):
         if self.mismatch == "XM:i:%s" % maxOffTargets:
-            return "%s,>%s across the genome,0-2,n/a " % (label, maxOffTargets)
+            return "%s,>%s across the genome,0-3,n/a " % (label, maxOffTargets)
         else:
             if not self.mismatchCorrected:
                 self.calc_mismatchPos()
@@ -1583,7 +1583,7 @@ PRIMER_EXPLAIN_FLAG=1
     return output[0]
 
 
-def writeIndividualResults(outputDir, maxOffTargets, sortedOutput, guideSize, mode, totalClusters, limitPrintResults):
+def writeIndividualResults(outputDir, maxOffTargets, sortedOutput, guideSize, mode, totalClusters, limitPrintResults, offtargetsTable):
     """ Writes each guide and its offtargets into a file """
 
     # Initiate list of lists for each cluster
@@ -1619,10 +1619,20 @@ def writeIndividualResults(outputDir, maxOffTargets, sortedOutput, guideSize, mo
             stats_file = '%s/%s_repStats.json' % (outputDir, current.ID)
             with open(stats_file, 'w') as fp:
                 json.dump(current.repStats, fp)
+            fp.close()
 
         if mode == CRISPR and not ISOFORMS and current.repProfile is not None:
             profile_file = '%s/%s_repProfile.csv' % (outputDir, current.ID)
             current.repProfile.to_csv(profile_file, index=False)
+
+        if mode == CRISPR and not ISOFORMS and offtargetsTable:
+            off_table = '%s/offtargetsTable.csv' % outputDir
+            label = "%s:%s,%s,%s" % (current.chrom, current.start, current.strand, current.strandedGuideSeq)
+            off_for_table = map(lambda x: x.asOffTargetString(label, maxOffTargets), current.offTargets)
+            with open(off_table, "a") as append_file:
+                if len(off_for_table) > 0:
+                    append_file.write("\n".join(off_for_table))
+                    append_file.write("\n")
 
     for clust in clusters:
         if len(clust) == 0:
@@ -2035,12 +2045,12 @@ def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, en
             elif tale1.start + taleMinDistance < tale2.start and tale1.strand != tale2.strand:
 
                 # EDV: Are all these find calls faster than a regular expression?
-                pos = tale1.name.find('_')
+                pos = tale1.name.rfind('_')
                 exon1 = tale1.name[:pos]
                 exonSeq = fastaSeq[exon1]
 
                 # Make sure the two TALENs are on the same "slice", only a problem for overlapping padding regions
-                pos2 = tale2.name.find('_')
+                pos2 = tale2.name.rfind('_')
                 exon2 = tale2.name[:pos2]
                 if exon1 != exon2:
                     continue
@@ -2049,13 +2059,13 @@ def pairCas9(taleList, fastaSeq, guideSize, taleMinDistance, taleMaxDistance, en
                 tale1coords = tale1.name[pos+1:]
 
                 # Just the second coordinate, corresponding to the end of the first tale e.g. 143
-                tale1End = int(tale1coords[tale1coords.find('-')+1:])
+                tale1End = int(tale1coords[tale1coords.rfind('-')+1:])
 
                 # The coordinates of the tale within the exon e.g. 160-175
-                tale2coords = tale2.name[tale2.name.find('_')+1:]
+                tale2coords = tale2.name[tale2.name.rfind('_')+1:]
 
                 # Just the first coordinate, corresponding to the beginning of the second tale e.g. 160
-                tale2Start = int(tale2coords[:tale2coords.find('-')])
+                tale2Start = int(tale2coords[:tale2coords.rfind('-')])
 
                 # sequence of spacer between end of tale1 and beginning of tale2
                 spacerSeq = exonSeq[tale1End:tale2Start]
@@ -2762,6 +2772,7 @@ def main():
     parser.add_argument("-consensusUnion", "--consensusUnion", default=False, action="store_true", help="When calculating consensus sequence from multiple isoforms default uses intersection. This option specifies union of isoforms.")
     parser.add_argument("-BED", "--BED", default=False, action="store_true", help="Create results as BED file, can be used for integration with UCSC.")
     parser.add_argument("-GenBank", "--GenBank", default=False, action="store_true", help="Create results as GenBank file, sequence of targeted region with introns is included.")
+    parser.add_argument("-offtargetsTable", "--offtargetsTable", default=False, action="store_true", help="Create .tsv table with off-targets. Not all off-targets will be reported when early stopping will work on a guide! Limited also to CRISPR mode only and limited by --limitPrintResults option.")
     args = parser.parse_args()
 
     # set isoforms to global as it is influencing many steps
@@ -3140,7 +3151,7 @@ def main():
     sortedOutput = sortOutput(results)
 
     # Write individual results to file
-    listOfClusters = writeIndividualResults(args.outputDir, args.maxOffTargets, sortedOutput, args.guideSize, args.MODE, cluster, args.limitPrintResults)
+    listOfClusters = writeIndividualResults(args.outputDir, args.maxOffTargets, sortedOutput, args.guideSize, args.MODE, cluster, args.limitPrintResults, args.offtargetsTable)
 
     if args.makePrimers:
         if args.fasta:
