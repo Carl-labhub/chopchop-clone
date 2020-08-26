@@ -63,11 +63,20 @@ From gtf to genePred
 `
 gtfToGenePred -genePredExt -geneNameAsName2 gencode.v29.annotation.gtf hg38.genePred
 `
-  
+or from gff3 to genePred  
+`
+gff3ToGenePred -geneNameAttr=gene_name gencode.v34.annotation.gff3 hg38.genePred
+`
+Also, potentially remove confusing transcript indexes in the first column with  
+`
+awk 'BEGIN { FS = OFS = "\t" } { gsub(/\.[^.]*$/, "", $1) }1' hg38.genePred > hg38_fixed.genePred
+`
+
+
 To make .gene_table format make sure your genePred file contains these columns, if not add them at the top of 
 the file (they should be tab delimited):  
 `
-name	chrom	strand	txStart	txEnd	cdsStart	cdsEnd	exonCount	exonStarts	exonEnds	score	name2	cdsStartStat	cdsEndStat	exonFrames
+echo -e "name\tchrom\tstrand\ttxStart\ttxEnd\tcdsStart\tcdsEnd\texonCount\texonStarts\texonEnds\tscore\tname2\tcdsStartStat\tcdsEndStat\texonFrames"  | cat - hg38v34.genePred > hg38v34_fix.genePred
 `  
 
 Also the name or name columns are what you will have to be using for identification of your gene targets, if you 
