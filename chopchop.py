@@ -527,14 +527,21 @@ class Cas9(Guide):
                                   "DOENCH_2016": 0,
                                   "MORENO_MATEOS_2015": 0,
                                   "CHARI_2015": 0,
-                                  "G_20": 0}
+                                  "G_20": 0,
+                                  "ALKAN_2018": 0,
+                                  "ZHANG_2019": 0}
         self.repProfile = None # Shen et al 2018 prediction of repair profile
         self.repStats = None
 
-        if self.scoringMethod not in ["CHARI_2015", "DOENCH_2016", "ALL"]:
+        if self.scoringMethod not in ["CHARI_2015", "DOENCH_2016", "ALKAN_2018", "ZHANG_2019", "ALL"]:
             self.CoefficientsScore[self.scoringMethod] = scoregRNA(
                 self.downstream5prim + self.strandedGuideSeq[:-len(self.PAM)],
                 self.strandedGuideSeq[-len(self.PAM):], self.downstream3prim, globals()[self.scoringMethod])
+            self.score -= self.CoefficientsScore[self.scoringMethod] * SCORE['COEFFICIENTS']
+
+        if self.scoringMethod == "ALKAN_2018" or self.scoringMethod == "ALL":
+            from CRISPRoff.CRISPRoff_specificity import CRISPRoff_score
+            self.CoefficientsScore[self.scoringMethod] = CRISPRoff_score(self.strandedGuideSeq)
             self.score -= self.CoefficientsScore[self.scoringMethod] * SCORE['COEFFICIENTS']
 
         if self.scoringMethod == "ALL":
@@ -546,22 +553,25 @@ class Cas9(Guide):
     def __str__(self):
         self.sort_offTargets()
         if self.scoringMethod == "ALL":
-            return "%s\t%s:%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f" % (self.strandedGuideSeq,
-                                                                                                        self.chrom,
-                                                                                                        self.start,
-                                                                                                        self.strand,
-                                                                                                        self.GCcontent,
-                                                                                                        self.folding,
-                                                                                                        self.offTargetsMM[0],
-                                                                                                        self.offTargetsMM[1],
-                                                                                                        self.offTargetsMM[2],
-                                                                                                        ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3],
-                                                                                                        self.CoefficientsScore["XU_2015"],
-                                                                                                        self.CoefficientsScore["DOENCH_2014"],
-                                                                                                        self.CoefficientsScore["DOENCH_2016"],
-                                                                                                        self.CoefficientsScore["MORENO_MATEOS_2015"],
-                                                                                                        self.CoefficientsScore["CHARI_2015"],
-                                                                                                        self.CoefficientsScore["G_20"])
+            return "%s\t%s:%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f" % (
+                self.strandedGuideSeq,
+                self.chrom,
+                self.start,
+                self.strand,
+                self.GCcontent,
+                self.folding,
+                self.offTargetsMM[0],
+                self.offTargetsMM[1],
+                self.offTargetsMM[2],
+                ">=" + str(self.offTargetsMM[3]) if self.isKmaxed else self.offTargetsMM[3],
+                self.CoefficientsScore["XU_2015"],
+                self.CoefficientsScore["DOENCH_2014"],
+                self.CoefficientsScore["DOENCH_2016"],
+                self.CoefficientsScore["MORENO_MATEOS_2015"],
+                self.CoefficientsScore["CHARI_2015"],
+                self.CoefficientsScore["G_20"],
+                self.CoefficientsScore["ALKAN_2018"],
+                self.CoefficientsScore["ZHANG_2019"])
         else:
             return "%s\t%s:%s\t%s\t%.0f\t%s\t%s\t%s\t%s\t%s\t%.2f" % (self.strandedGuideSeq,
                                                                           self.chrom,
@@ -2761,7 +2771,7 @@ def main():
     parser.add_argument("-O", "--limitPrintResults", type=int, default=3000 if HARD_LIMIT > 3000 else HARD_LIMIT, dest="limitPrintResults", help="The number of results to print extended information for. Web server can handle 4k of these.")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
-    parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type=str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "KIM_2018", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20")
+    parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type=str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "KIM_2018", "ALKAN_2018", "ZHANG_2019", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20. If a method fails to give scores, CHOPCHOP will output 0 instead of terminating.")
     parser.add_argument("-repairPredictions", "--repairPredictions", default=None, type=str,
                         choices=['mESC', 'U2OS', 'HEK293', 'HCT116', 'K562'], help="Use inDelphi from Shen et al 2018 to predict repair profiles for every guideRNA, this will make .repProfile and .repStats files")
     parser.add_argument("-rm1perfOff", "--rm1perfOff", default = False, action="store_true", help="For fasta input, don't score one off-target without mismatches.")
@@ -2963,6 +2973,28 @@ def main():
                 guide.CoefficientsScore["CHARI_2015"] = newScores[i]
                 if args.scoringMethod == "CHARI_2015":
                     guide.score -= (guide.CoefficientsScore["CHARI_2015"] / 100) * SCORE['COEFFICIENTS']
+        except:
+            pass
+
+
+    if (args.scoringMethod == "ZHANG_2019" or args.scoringMethod == "ALL") and (args.PAM == "NGG") and not ISOFORMS:
+        try:
+            zhangInputFile = '%s/zhang_score.txt' % args.outputDir
+            zhangFile = open(zhangInputFile, 'w')
+            for guide in results:
+                zhangFile.write(guide.downstream5prim[-4:] + guide.strandedGuideSeq + guide.downstream3prim[:3] + '\n')
+            zhangFile.close()
+
+            prog = Popen("%s/uCRISPR/uCRISPR -on %s" % (f_p, zhangInputFile), stdout=PIPE, stderr=PIPE, shell=True)
+            output = prog.communicate()
+            output = output[0].splitlines()
+            output = output[1:]
+            # distribution calculated on 100k random guides
+            output = [ss.norm.cdf(float(x.split()[1]), loc=11.92658, scale=0.2803797) for x in output]
+            for i, guide in enumerate(results):
+                guide.CoefficientsScore["ZHANG_2019"] = output[i] * 100
+                if args.scoringMethod == "ZHANG_2019":
+                    guide.score -= (guide.CoefficientsScore["ZHANG_2019"] / 100) * SCORE['COEFFICIENTS']
         except:
             pass
 
@@ -3172,7 +3204,7 @@ def main():
         if args.MODE == CRISPR:
             common_header = "Rank\tTarget sequence\tGenomic location\tStrand\tGC content (%)\tSelf-complementarity\tMM0\tMM1\tMM2\tMM3"
             if args.scoringMethod == "ALL":
-                print(common_header + "\tXU_2015\tDOENCH_2014\tDOENCH_2016\tMORENO_MATEOS_2015\tCHARI_2015\tG_20")
+                print(common_header + "\tXU_2015\tDOENCH_2014\tDOENCH_2016\tMORENO_MATEOS_2015\tCHARI_2015\tG_20\tALKAN_2018\tZHANG_2019")
             else:
                 print(common_header + "\tEfficiency")
             for i in range(len(sortedOutput)):

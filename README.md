@@ -28,6 +28,7 @@ but may require compilation for your operating system
 - [twoBitToFa](http://hgdownload.soe.ucsc.edu/admin/exe/ "twoBitToFa download") - included
 - [svm_light](http://svmlight.joachims.org/ "svm_light download") - included, 
 but may require compilation for your operating system, necessary only with option ```--scoringMethod CHARI_2015```, only working for mm10 and hg19 genomes with NGG or NNAGAAW PAMs, otherwise returns zeros
+- [ViennaRNA](https://www.tbi.univie.ac.at/RNA/#download) - only if you want to use crisproff (Alkan et al. 2018, Genome Biology) energy model predictions, make sure you have RNAfold accessible for running
 - [primer3](http://primer3.sourceforge.net/releases.php "primer3 download") - included
 - CHOPCHOP script will need a [table](http://genome.ucsc.edu/cgi-bin/hgTables?command=start) to look up genomic coordinates if you want to supply names of the genes rather than coordinates. To get example genePred table:
     * Select organism and assembly 
