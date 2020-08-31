@@ -1231,7 +1231,9 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, scoreGC, scoreSelf
     guide_list = []
 
     sam = pandas.read_csv(bowtieResultsFile, sep='\t', names=list(range(14)),
-                          header=None, index_col=False, converters={2:str})
+                          header=None, index_col=False,
+                          dtype={0: str, 1: int, 2: str, 3: int, 4: int, 5: str, 6: str, 7: int,
+                                 8: int, 9: str, 10: str, 11: str, 12: str, 13: str, 14: str})
     sam_name = sam.iloc[:, 0].value_counts()
     sam_name = sam_name >= maxOffTargets
     if mode: # Cas9, Cpf1, Nickase and not TALEN
