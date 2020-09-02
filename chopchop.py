@@ -1230,6 +1230,9 @@ def parseBowtie(guideClass, bowtieResultsFile, checkMismatch, scoreGC, scoreSelf
     curr_guide = None
     guide_list = []
 
+    if os.stat(bowtieResultsFile).st_size == 0:  # file is empty
+        return guide_list
+
     sam = pandas.read_csv(bowtieResultsFile, sep='\t', names=list(range(14)),
                           header=None, index_col=False,
                           dtype={0: str, 1: int, 2: str, 3: int, 4: int, 5: str, 6: str, 7: int,
