@@ -1129,7 +1129,7 @@ def geneToCoord_file(gene_in, table_file):
     return gene, tx_info
 
 
-def coordToFasta(regions, fasta_file, outputDir, targetSize, evalAndPrintFunc, indexDir, genome, strand, ext):
+def coordToFasta(regions, fasta_file, outputDir, targetSize, evalAndPrintFunc, nonOver, indexDir, genome, strand, ext):
     """ Extracts the sequence corresponding to genomic coordinates from a FASTA file """
 
     ext = 0 if ISOFORMS else ext # for genomic context for some models
@@ -1147,6 +1147,9 @@ def coordToFasta(regions, fasta_file, outputDir, targetSize, evalAndPrintFunc, i
         finish = int(region[region.rfind('-')+1:])
         start = max(start, 0)
 
+        if ext == 0 and finish == start:
+            continue
+
         # Run twoBitToFa program to get actual dna sequence corresponding to input genomic coordinates
         # Popen runs twoBitToFa program. PIPE pipes stdout.
         prog = Popen("%s -seq=%s -start=%d -end=%d %s/%s.2bit stdout 2> %s/twoBitToFa.err" % (
@@ -1163,6 +1166,9 @@ def coordToFasta(regions, fasta_file, outputDir, targetSize, evalAndPrintFunc, i
         dna = ''.join(exons[1:]).upper()
         ext_dna = dna
         dna = dna[ext:(len(dna)-ext)]
+        if len(dna) != (finish - start):  # something is wrong with what was fetched by twoBitToFa
+            continue
+
         if ISOFORMS and strand == "-":
             dna = str(Seq(dna).reverse_complement())
 
@@ -1172,15 +1178,23 @@ def coordToFasta(regions, fasta_file, outputDir, targetSize, evalAndPrintFunc, i
         # Add 1 due to BED 0-indexing
         name = "C:%s:%d-%d" % (chrom, start, finish)
 
-        # Loop over exon sequence, write every g-mer into file in which g-mer ends in PAM in fasta format 
-        for num in range(0, len(dna)-(targetSize-1)):
+        # Loop over exon sequence, write every g-mer into file in which g-mer ends in PAM in fasta format
+        positions = range(0, len(dna)-(targetSize-1))
+        while len(positions) != 0:
+            num = positions.pop(0)
             downstream_5prim = ext_dna[num:(num + ext)]
             g_end = num + ext + targetSize
             downstream_3prim = ext_dna[g_end:(g_end + ext)]
             if evalAndPrintFunc(name, targetSize, dna[num:(num + targetSize)],
                                 len(dna) - num - targetSize if ISOFORMS and strand == "-" else num, fasta_file,
                                 downstream_5prim, downstream_3prim):
-                sequences[name] = dna
+                if nonOver:  # positions overlapping those of this guide
+                    for p in range(num, num + targetSize):
+                        if p in positions:
+                            positions.remove(p)
+
+                if name not in sequences:
+                    sequences[name] = dna
 
     fasta_file.close()
 
@@ -2776,6 +2790,7 @@ def main():
     parser.add_argument("-O", "--limitPrintResults", type=int, default=3000 if HARD_LIMIT > 3000 else HARD_LIMIT, dest="limitPrintResults", help="The number of results to print extended information for. Web server can handle 4k of these.")
     parser.add_argument("-w", "--uniqueMethod_Cong", default=False, dest="uniqueMethod_Cong", action="store_true", help="A method to determine how unique the site is in the genome: allows 0 mismatches in last 15 bp.")
     parser.add_argument("-J", "--jsonVisualize", default=False, action="store_true", help="Create files for visualization with json.")
+    parser.add_argument("-nonO", "--nonOverlapping", default=False, action="store_true", help="Will not produce overlapping guides, saves time, and recommended for permissive PAMs (e.g. Cas13d).")
     parser.add_argument("-scoringMethod", "--scoringMethod", default="G_20", type=str, choices=["XU_2015", "DOENCH_2014", "DOENCH_2016", "MORENO_MATEOS_2015", "CHARI_2015", "G_20", "KIM_2018", "ALKAN_2018", "ZHANG_2019", "ALL"], help="Scoring used for Cas9 and Nickase. Default is G_20. If a method fails to give scores, CHOPCHOP will output 0 instead of terminating.")
     parser.add_argument("-repairPredictions", "--repairPredictions", default=None, type=str,
                         choices=['mESC', 'U2OS', 'HEK293', 'HCT116', 'K562'], help="Use inDelphi from Shen et al 2018 to predict repair profiles for every guideRNA, this will make .repProfile and .repStats files")
@@ -2890,7 +2905,7 @@ def main():
             CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"],
             args.outputDir, args.consensusUnion, args.jsonVisualize, args.guideSize)
         sequences, fastaSequence = coordToFasta(
-            targets, candidate_fasta_file, args.outputDir, args.guideSize, evalSequence,
+            targets, candidate_fasta_file, args.outputDir, args.guideSize, evalSequence, args.nonOverlapping,
             CONFIG["PATH"]["TWOBIT_INDEX_DIR"] if not ISOFORMS else CONFIG["PATH"]["ISOFORMS_INDEX_DIR"],
             args.genome, strand, DOWNSTREAM_NUC)
 
