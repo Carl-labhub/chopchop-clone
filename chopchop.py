@@ -2305,17 +2305,15 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
                 sys.exit(EXIT['GENE_ERROR'])
 
     else:
-        seen = set()
         if use_db:
             if ISOFORMS:
                 sys.stderr.write("--isoforms is not working with database search.\n")
                 sys.exit(EXIT['ISOFORMS_ERROR'])
             txInfo = geneToCoord_db(target_string, genome, data)
-            # if more isoforms have exact same name take first one
-            txInfo = [x for x in txInfo if not (str(x[3]) in seen or seen.add(str(x[3])))]
+            txInfo = filterRepeatingNames(txInfo)
         else:
             gene, txInfo = geneToCoord_file(target_string, data)
-            txInfo = [x for x in txInfo if not (str(x[3]) in seen or seen.add(str(x[3])))]
+            txInfo = filterRepeatingNames(txInfo)
             isoform = "union" if use_union else "intersection"
             gene_isoforms = set([str(x[3]) for x in txInfo])
             if target_string in gene_isoforms:
@@ -2489,6 +2487,35 @@ def parseTargets(target_string, genome, use_db, data, pad_size, target_region, e
         sys.exit(EXIT['GENE_ERROR'])
 
     return targets, vis_coords, target_strand, gene, isoform, gene_isoforms
+
+
+def filterRepeatingNames(txInfo, filter_names=["fix", "random", "alt"]):
+    # if more isoforms have exact same name filter the ones
+    # with "alt", "fix", "random" in chr names
+    # then take the first one
+    seen = []
+    same_name_tx = []
+    is_special = []
+    for x in txInfo:
+        if str(x[3]) not in seen:
+            seen.append(str(x[3]))
+            same_name_tx.append([x])
+            is_special.append([any(fn in str(x[0]) for fn in filter_names)])
+        else:
+            idx = seen.index(str(x[3]))
+            same_name_tx[idx].append(x)
+            is_special[idx].append(any(fn in str(x[0]) for fn in filter_names))
+
+    txInfo_ = []
+    for i, tx in enumerate(same_name_tx):
+        if any(is_special[i]) and sum(is_special[i]) < len(is_special[i]):
+            idx = [i for i, x in enumerate(is_special[i]) if not x]
+            txInfo_.append(tx[idx[0]])
+        else:
+            txInfo_.append(tx[0])
+
+    return txInfo_
+
 
 
 def parseFastaTarget(fasta_file, candidate_fasta_file, target_size, eval_and_print):
