@@ -91,7 +91,7 @@ achieved with bedtools getfasta e.g.
 
 ```bash
 genePredToBed your_input.genePred output.bed
-bedtools getfasta -fi your_genome.fa -bed above_output.bed -name -s -split -fo transcriptome.fa
+bedtools getfasta -fi your_genome.fa -bed above_output.bed -nameOnly -s -split -fo transcriptome.fa
 ```
 
 Bowtie indexes of transcriptome files should also be created. In this situation all possible guides 
@@ -111,7 +111,7 @@ set up a folder with .mt files. To create .mt files you can use ViennaRNA packag
 ```bash
  RNAplfold < your_tx_file.fa
 ```
-Afterwards use their `mountain.pl` script to creat .mt files, for e.g.
+Afterwards use `mountain.pl` script (located at the top level of chopchop) to create .mt files, for e.g.
 ```bash
 #!/bin/bash  
 for filename in $1/*.ps; do  
