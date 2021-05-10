@@ -37,7 +37,7 @@ but may require compilation for your operating system, necessary only with optio
     * Select organism and assembly 
     * Select group: Genes and Gene Predictions
     * Select track: RefSeq Genes or Ensemble Genes 
-    * Select table: refFlat or ensGene
+    * Select table: refGene or ensGene
     * Select region: genome
     * Select output format: all fields from selected table
     * Fill name with extension ".gene_table' e.g. danRer10.gene_table
