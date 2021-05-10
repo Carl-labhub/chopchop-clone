@@ -12,6 +12,9 @@ range of customization. We even support Cas13 for isoform targeting.
 
 #### Prerequisites:
 Please, create separate environment for CHOPCHOP using `virtualenv` to easly manage dependencies. 
+Some users using conda report setup below worked for them:  
+```conda install -c anaconda biopython pandas numpy scipy argparse mysql-python scikit-learn=0.18.1```
+
 This is important step, as some dependencies may break your system!
 
 - [Python](https://www.python.org/download/) - We operate on 2.7
