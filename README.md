@@ -198,6 +198,11 @@ Genomes and indexes are available [here](https://chopchop.cbu.uib.no/genomes/).
   ./chopchop_query.py --gene_names NM_144906,NM_001265875 -G hg19 -o temp2
   ```
 
+  When using FASTA input, remember CHOPCHOP will use only the first sequence from multi-fasta files.
+  ```
+  ./chopchop.py -Target /full/path/to/fastaInput.fa -F ... other options
+  ```
+
   For all genes in genePred table, with Cpf1 option:  
   ```
   ./chopchop_query.py --genePred /full/path/to/genPred/hg19.gene_table -G hg19 -o temp -T 3
@@ -206,8 +211,8 @@ Genomes and indexes are available [here](https://chopchop.cbu.uib.no/genomes/).
   Design Cas13 guides for selected transcripts of tb gene in Zebrafish:
   ```
   ./chopchop_query.py --gene_names ENSDART00000007204.8,ENSDART00000160271.1,ENSDART00000157768.1 -G danRer10 -g 27 -M H -T 3 --isoforms -o /tb/ENSDARG00000039806
-  ```  
-  
+  ```
+
 #### Explore different options of our CHOPCHOP scripts:
   ```
   ./chopchop.py --help
